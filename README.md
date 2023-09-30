@@ -4,6 +4,10 @@ Code to reproduce the experiments is coming soon... :construction_worker:
 
 Preprint and supplementary material available [online](https://arxiv.org/abs/2309.10657).
 
+
+[![Video](docs/video_thumbnail.png)](https://youtu.be/NDOsWzt1xWo?si=kloCob3V9R_BJRBW)
+
+
 # Citation
 ```
 @misc{berducci2023learning,
