@@ -1,0 +1,41 @@
+base_env: f110-multi-agent-v0
+
+env_params:
+  track_name: "General1"
+  opp_planner:
+    - "pp"
+    - "pp"
+  opp_params:
+    - vgain: 0.6
+      vgain_std: 0.05
+    - vgain: 0.6
+      vgain_std: 0.05
+  termination_types:
+    - "on_collision"
+    - "on_any_cross_finish_line"
+    - "on_timeout"
+  timeout: 15.0
+  reset_mode: "section0.0-0.4_back"
+  reward: "sparse_rel_progress"
+  control_freq: 2
+  planning_freq: 10
+  local_path_generation: "auto_lattice"
+  vehicle_features:
+    - "pose"
+    - "velocity"
+    - "frenet_coords"
+  track_features:
+    - "curvature"
+    - "raceline"
+  forward_curv_lookahead: 10.0
+  n_curvature_points: 10
+
+cbf_params:
+  use_cbf: True
+  cbf_type: "simple"
+  opt_decay: False
+  safety_dim: 2
+  cbf_gamma_range:
+      - 0.01
+      - 1.0
+  frame_stack: 1

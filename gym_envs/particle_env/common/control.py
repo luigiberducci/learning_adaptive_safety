@@ -1,0 +1,1053 @@
+import numpy as np
+
+import osqp
+import scipy.sparse as sparse
+
+kRandom = True
+kDebug = False
+kDraw = False
+kVideo = False
+
+
+def filter_output(
+    agent_idx, agents, x_nom, T=1, G_all=None, g_all=None, m=None, z=None, gamma=None
+):
+    # cbf coefficient to control rate of change of barrier function
+    if gamma is None:
+        gamma = agents[agent_idx].gamma
+
+    N_a = len(agents)
+    x0 = np.array(
+        [
+            agents[agent_idx].position[0],
+            agents[agent_idx].position[1],
+            agents[agent_idx].velocity[0],
+            agents[agent_idx].velocity[1],
+        ]
+    )
+    amax = 0.8 * agents[agent_idx].max_acceleration
+
+    # Get dynamics (with error)
+    Ad, Bd = agents[agent_idx].update_linearization_err()
+    Av = Ad[2:4, :]
+    Bv = Bd[2:4, :]
+
+    eps_m = 0.01
+    zp_max = 0.001
+    zv_max = 0.001
+    zph_max = 0.001
+    zvh_max = 0.001
+
+    for t in range(T):
+        # Set up QP to minimize actuation deviation
+        dual_f = 16
+        duals = dual_f * (N_a - 1)
+        P = np.zeros((7 + duals, 7 + duals))
+        P[2, 2] = 1
+        P[3, 3] = 1
+        P[4, 4] = 1
+        P[5, 5] = 1
+        P[6, 6] = agents[agent_idx].eps
+        P = sparse.csc_matrix(P)
+        q = np.hstack([0.0, 0.0, -x_nom[:, t + 1], 0.0, np.zeros(duals)])
+
+        # Velocity/Acceleration Constraints
+        up = agents[agent_idx].max_velocity - np.matmul(Av, x0)
+        up = np.hstack(
+            (up, agents[agent_idx].max_acceleration, agents[agent_idx].max_acceleration)
+        )
+        lp = -agents[agent_idx].max_velocity - np.matmul(Av, x0)
+        lp = np.hstack(
+            (
+                lp,
+                -agents[agent_idx].max_acceleration,
+                -agents[agent_idx].max_acceleration,
+            )
+        )
+        A_np = np.vstack(
+            [
+                np.hstack(
+                    [Bv, np.zeros((2, 4)), np.zeros((2, 1)), np.zeros((2, duals))]
+                ),
+                np.hstack(
+                    [
+                        np.eye(2),
+                        np.zeros((2, 4)),
+                        np.zeros((2, 1)),
+                        np.zeros((2, duals)),
+                    ]
+                ),
+            ]
+        )
+
+        # Dynamics Constraint
+        A_np = np.vstack(
+            [A_np, np.hstack([Bd, -np.eye(4), np.zeros((4, 1)), np.zeros((4, duals))])]
+        )
+        lp = np.hstack((lp, -np.matmul(Ad, x0)))
+        up = np.hstack((up, -np.matmul(Ad, x0)))
+
+        # Robust CBC Constraint
+        pr, vr = x0[0:2], x0[2:4]
+        fp, _, fv, gv = agents[agent_idx].get_dynamics(x0)  # Get robot dynamics
+        if m is not None:
+            fp = fp + m[0, 0:2]
+            fv = fv + m[0, 2:4]
+
+        idx = 0
+        sorted_ids = sorted(
+            range(len(agents)),
+            key=lambda k: np.linalg.norm(
+                agents[k].position - agents[agent_idx].position
+            ),
+        )
+        sorted_ids = [i for i in sorted_ids if i != agent_idx]  # Remove self
+        for j in range(len(agents)):
+            if j == agent_idx:
+                continue
+
+            if isinstance(gamma, float):
+                gcbf = gamma
+            else:
+                dist_id = sorted_ids.index(j)
+                gcbf = gamma[dist_id if dist_id < len(gamma) else -1]
+
+            xh = np.concatenate([agents[j].position, agents[j].velocity], axis=0)
+            ph, _, vh, _ = agents[j].get_dynamics_human(xh, t)
+            xh = np.concatenate([ph, vh], axis=0)
+            fp_h, _, fv_h, _ = agents[j].get_dynamics_human(
+                xh, t + 1
+            )  # Project "human" dynamics (t+1 steps)
+            if m is not None:
+                fp_h = fp_h + m[j, 0:2]
+                fv_h = fv_h + m[j, 2:4]
+
+            if z is not None:
+                zp_max = z[0, 0]
+                zv_max = z[0, 1]
+                zph_max = z[j, 0]
+                zvh_max = z[j, 1]
+
+            # Define matrices in QP (see eq. 15 in paper)
+            den_p = max(np.linalg.norm(fp - fp_h) + zp_max + zph_max, eps_m)
+            den_m = max(np.linalg.norm(fp - fp_h) - zp_max - zph_max, eps_m)
+            H1 = np.hstack(
+                [
+                    -(fv - fv_h) / den_m,
+                    -(fp - fp_h) / den_m,
+                    (fv - fv_h) / den_m,
+                    (fp - fp_h) / den_m,
+                ]
+            )
+            H2 = np.hstack(
+                [-gv / den_m, np.zeros((2, 2)), gv / den_m, np.zeros((2, 2))]
+            )
+            H3 = -np.matmul((fp - fp_h), gv) / den_p
+            if G_all is None:
+                G = np.kron(
+                    np.eye(2),
+                    np.array(
+                        [
+                            [1, 0, 0, 0],
+                            [-1, 0, 0, 0],
+                            [0, 1, 0, 0],
+                            [0, -1, 0, 0],
+                            [0, 0, 1, 0],
+                            [0, 0, -1, 0],
+                            [0, 0, 0, 1],
+                            [0, 0, 0, -1],
+                        ]
+                    ),
+                )
+            else:
+                G = G_all[j - 1, :, :]
+            if g_all is None:
+                g = np.kron(
+                    np.ones(2),
+                    np.array(
+                        [
+                            zp_max,
+                            zp_max,
+                            zv_max,
+                            zv_max,
+                            zph_max,
+                            zph_max,
+                            zvh_max,
+                            zvh_max,
+                        ]
+                    ),
+                )
+            else:
+                g = g_all[j - 1, :]
+            kc = (
+                min(
+                    np.dot(fp - fp_h, fv - fv_h) / den_p,
+                    np.dot(fp - fp_h, fv - fv_h) / den_m,
+                )
+                + np.sqrt(amax * (max(den_m - agents[agent_idx].Ds, 0.0)))
+                + (gcbf - 1)
+                * np.sqrt(
+                    amax * (max(np.linalg.norm(pr - ph) - agents[agent_idx].Ds, 0.0))
+                )
+                + (gcbf - 1)
+                * np.dot(pr - ph, vr - vh)
+                / (max(np.linalg.norm(pr - ph), eps_m))
+            )
+            h_l1 = np.expand_dims(
+                np.hstack(
+                    [
+                        H3,
+                        np.zeros(4),
+                        -1.0,
+                        np.zeros(dual_f * idx),
+                        g,
+                        np.zeros(dual_f * (len(agents) - 2 - idx)),
+                    ]
+                ),
+                axis=0,
+            )
+            h_l2 = np.hstack(
+                [
+                    np.transpose(H2),
+                    np.zeros((8, 4)),
+                    np.zeros((8, 1)),
+                    np.zeros((8, dual_f * idx)),
+                    -np.transpose(G),
+                    np.zeros((8, dual_f * (len(agents) - 2 - idx))),
+                ]
+            )
+            h_r2 = -H1
+            A_np = np.vstack([A_np, h_l1, h_l2])
+            lp = np.hstack((lp, -np.inf, h_r2 - 0.001 * np.ones(8)))
+            up = np.hstack((up, kc, h_r2 + 0.001 * np.ones(8)))
+            idx += 1
+        h_l3 = np.hstack([np.zeros((duals, 7)), -np.eye(duals)])
+        A_np = np.vstack([A_np, h_l3])
+        lp = np.hstack((lp, -np.inf * np.ones(duals)))
+        up = np.hstack((up, np.zeros(duals)))
+        Ap = sparse.csc_matrix(A_np)
+
+        # Setup workspace and solve QP
+        prob = osqp.OSQP()
+        prob.setup(P, q, Ap, lp, up, verbose=False)
+        res = prob.solve()
+        if t == 0:
+            ctrl = res.x[0:2]
+
+    return ctrl
+
+
+def filter_output_decay(
+    agent_idx,
+    agents,
+    x_nom,
+    T=1,
+    G_all=None,
+    g_all=None,
+    m=None,
+    z=None,
+    gamma=None,
+    gamma_penalize=100.0,
+):
+    # cbf coefficient to control rate of change of barrier function
+    if gamma is None:
+        gamma = agents[agent_idx].gamma
+
+    N_a = len(agents)
+    x0 = np.array(
+        [
+            agents[agent_idx].position[0],
+            agents[agent_idx].position[1],
+            agents[agent_idx].velocity[0],
+            agents[agent_idx].velocity[1],
+        ]
+    )
+    amax = agents[agent_idx].max_acceleration
+
+    # Get dynamics (with error)
+    Ad, Bd = agents[agent_idx].update_linearization_err()
+    Av = Ad[2:4, :]
+    Bv = Bd[2:4, :]
+
+    eps_m = 0.01
+    zp_max = 0.001
+    zv_max = 0.001
+    zph_max = 0.001
+    zvh_max = 0.001
+
+    decay_pw = gamma_penalize
+    nominal_gamma = gamma  # new_decision_variable = our_gamma - nominal_gamma; finally we return our_gamma
+
+    for t in range(T):
+        # Set up QP to minimize actuation deviation
+        dual_f = 16
+        duals = dual_f * (N_a - 1)
+        P = np.zeros((8 + duals, 8 + duals))
+        P[2, 2] = 1
+        P[3, 3] = 1
+        P[4, 4] = 1
+        P[5, 5] = 1
+        P[6, 6] = agents[agent_idx].eps
+        P[7, 7] = decay_pw
+        P = sparse.csc_matrix(P)
+        q = np.hstack([0.0, 0.0, -x_nom[:, t + 1], 0.0, 0.0, np.zeros(duals)])
+
+        # Velocity/Acceleration Constraints
+        up = agents[agent_idx].max_velocity - np.matmul(Av, x0)
+        up = np.hstack(
+            (up, agents[agent_idx].max_acceleration, agents[agent_idx].max_acceleration)
+        )
+        lp = -agents[agent_idx].max_velocity - np.matmul(Av, x0)
+        lp = np.hstack(
+            (
+                lp,
+                -agents[agent_idx].max_acceleration,
+                -agents[agent_idx].max_acceleration,
+            )
+        )
+        A_np = np.vstack(
+            [
+                np.hstack(
+                    [Bv, np.zeros((2, 4)), np.zeros((2, 1)), np.zeros((2, duals))]
+                ),
+                np.hstack(
+                    [
+                        np.eye(2),
+                        np.zeros((2, 4)),
+                        np.zeros((2, 1)),
+                        np.zeros((2, duals)),
+                    ]
+                ),
+            ]
+        )
+
+        # Dynamics Constraint
+        A_np = np.vstack(
+            [A_np, np.hstack([Bd, -np.eye(4), np.zeros((4, 1)), np.zeros((4, duals))])]
+        )
+        lp = np.hstack((lp, -np.matmul(Ad, x0)))
+        up = np.hstack((up, -np.matmul(Ad, x0)))
+
+        redundant_dim_gamma = A_np.shape[0]
+        gamma_coefficient_vector = np.zeros(redundant_dim_gamma)
+
+        # Robust CBC Constraint
+        pr, vr = x0[0:2], x0[2:4]
+        fp, _, fv, gv = agents[agent_idx].get_dynamics(x0)  # Get robot dynamics
+        if m is not None:
+            fp = fp + m[0, 0:2]
+            fv = fv + m[0, 2:4]
+
+        idx = 0
+        sorted_ids = sorted(
+            range(len(agents)),
+            key=lambda k: np.linalg.norm(
+                agents[k].position - agents[agent_idx].position
+            ),
+        )
+        sorted_ids = [i for i in sorted_ids if i != agent_idx]  # Remove self
+        for j in range(len(agents)):
+            if j == agent_idx:
+                continue
+
+            xh = np.concatenate([agents[j].position, agents[j].velocity], axis=0)
+            ph, _, vh, _ = agents[j].get_dynamics_human(xh, t)
+            xh = np.concatenate([ph, vh], axis=0)
+            fp_h, _, fv_h, _ = agents[j].get_dynamics_human(
+                xh, t + 1
+            )  # Project "human" dynamics (t+1 steps)
+            if m is not None:
+                fp_h = fp_h + m[j, 0:2]
+                fv_h = fv_h + m[j, 2:4]
+
+            if z is not None:
+                zp_max = z[0, 0]
+                zv_max = z[0, 1]
+                zph_max = z[j, 0]
+                zvh_max = z[j, 1]
+
+            # Define matrices in QP (see eq. 15 in paper)
+            den_p = max(np.linalg.norm(fp - fp_h) + zp_max + zph_max, eps_m)
+            den_m = max(np.linalg.norm(fp - fp_h) - zp_max - zph_max, eps_m)
+            H1 = np.hstack(
+                [
+                    -(fv - fv_h) / den_m,
+                    -(fp - fp_h) / den_m,
+                    (fv - fv_h) / den_m,
+                    (fp - fp_h) / den_m,
+                ]
+            )
+            H2 = np.hstack(
+                [-gv / den_m, np.zeros((2, 2)), gv / den_m, np.zeros((2, 2))]
+            )
+            H3 = -np.matmul((fp - fp_h), gv) / den_p
+            if G_all is None:
+                G = np.kron(
+                    np.eye(2),
+                    np.array(
+                        [
+                            [1, 0, 0, 0],
+                            [-1, 0, 0, 0],
+                            [0, 1, 0, 0],
+                            [0, -1, 0, 0],
+                            [0, 0, 1, 0],
+                            [0, 0, -1, 0],
+                            [0, 0, 0, 1],
+                            [0, 0, 0, -1],
+                        ]
+                    ),
+                )
+            else:
+                G = G_all[j - 1, :, :]
+            if g_all is None:
+                g = np.kron(
+                    np.ones(2),
+                    np.array(
+                        [
+                            zp_max,
+                            zp_max,
+                            zv_max,
+                            zv_max,
+                            zph_max,
+                            zph_max,
+                            zvh_max,
+                            zvh_max,
+                        ]
+                    ),
+                )
+            else:
+                g = g_all[j - 1, :]
+
+            kc = (
+                min(
+                    np.dot(fp - fp_h, fv - fv_h) / den_p,
+                    np.dot(fp - fp_h, fv - fv_h) / den_m,
+                )
+                + np.sqrt(amax * (max(den_m - agents[agent_idx].Ds, 0.0)))
+                + (nominal_gamma - 1)
+                * np.sqrt(
+                    amax * (max(np.linalg.norm(pr - ph) - agents[agent_idx].Ds, 0.0))
+                )
+                + (nominal_gamma - 1)
+                * np.dot(pr - ph, vr - vh)
+                / (max(np.linalg.norm(pr - ph), eps_m))
+            )
+
+            gamma_coefficient = -np.sqrt(
+                amax * (max(np.linalg.norm(pr - ph) - agents[agent_idx].Ds, 0.0))
+            ) - np.dot(pr - ph, vr - vh) / (max(np.linalg.norm(pr - ph), eps_m))
+
+            h_l1 = np.expand_dims(
+                np.hstack(
+                    [
+                        H3,
+                        np.zeros(4),
+                        -1.0,
+                        np.zeros(dual_f * idx),
+                        g,
+                        np.zeros(dual_f * (len(agents) - 2 - idx)),
+                    ]
+                ),
+                axis=0,
+            )
+            h_l2 = np.hstack(
+                [
+                    np.transpose(H2),
+                    np.zeros((8, 4)),
+                    np.zeros((8, 1)),
+                    np.zeros((8, dual_f * idx)),
+                    -np.transpose(G),
+                    np.zeros((8, dual_f * (len(agents) - 2 - idx))),
+                ]
+            )
+            h_r2 = -H1
+            A_np = np.vstack([A_np, h_l1, h_l2])
+            lp = np.hstack((lp, -np.inf, h_r2 - 0.001 * np.ones(8)))
+            up = np.hstack((up, kc, h_r2 + 0.001 * np.ones(8)))
+            gamma_coefficient_vector = np.hstack(
+                (gamma_coefficient_vector, gamma_coefficient, np.zeros(8))
+            )
+            idx += 1
+        h_l3 = np.hstack([np.zeros((duals, 7)), -np.eye(duals)])
+        gamma_coefficient_vector = np.hstack(
+            (gamma_coefficient_vector, np.zeros(h_l3.shape[0]))
+        )
+        A_np = np.vstack([A_np, h_l3])
+        A_np = np.hstack(
+            [A_np, gamma_coefficient_vector.reshape((len(gamma_coefficient_vector), 1))]
+        )
+        lp = np.hstack((lp, -np.inf * np.ones(duals)))
+        up = np.hstack((up, np.zeros(duals)))
+        Ap = sparse.csc_matrix(A_np)
+
+        # Setup workspace and solve QP
+        prob = osqp.OSQP()
+        prob.setup(P, q, Ap, lp, up, verbose=False)
+        res = prob.solve()
+        if t == 0:
+            ctrl = res.x[0:2]
+            optimal_gamma = res.x[7] + nominal_gamma
+            # print("optimal gamma: ", optimal_gamma)
+
+    return ctrl
+
+
+def filter_output_primal(agent_idx, agents, x_nom, T=1, gamma=None):
+    if gamma is None:
+        gamma = agents[agent_idx].gamma
+
+    x0 = np.array(
+        [
+            agents[agent_idx].position[0],
+            agents[agent_idx].position[1],
+            agents[agent_idx].velocity[0],
+            agents[agent_idx].velocity[1],
+        ]
+    )
+    amax = 0.8 * agents[agent_idx].max_acceleration
+
+    # Get dynamics (with error)
+    Ad, Bd = agents[agent_idx].update_linearization_err()
+    Av = Ad[2:4, :]
+    Bv = Bd[2:4, :]
+
+    for t in range(T):
+        # MPC Problem (u(0), x(1), eps)
+        # Minimize position deviation
+        P = np.eye(7)
+        P[0, 0] = 0
+        P[1, 1] = 0
+        P[6, 6] = agents[agent_idx].eps
+        P = sparse.csc_matrix(P)
+        q = np.hstack([0.0, 0.0, -x_nom[:, t + 1], 0.0])
+
+        # Velocity/Acceleration Constraints
+        mult = 1
+        up = mult * agents[agent_idx].max_velocity - np.matmul(Av, x0)
+        up = np.hstack(
+            (
+                up,
+                mult * agents[agent_idx].max_acceleration,
+                mult * agents[agent_idx].max_acceleration,
+            )
+        )
+        lp = -mult * agents[agent_idx].max_velocity - np.matmul(Av, x0)
+        lp = np.hstack(
+            (
+                lp,
+                -mult * agents[agent_idx].max_acceleration,
+                -mult * agents[agent_idx].max_acceleration,
+            )
+        )
+        A_np = np.vstack(
+            [
+                np.hstack([Bv, np.zeros((2, 4))]),
+                np.hstack([np.eye(2), np.zeros((2, 4))]),
+            ]
+        )
+
+        # Dynamics Constraint
+        A_np = np.vstack([A_np, np.hstack([Bd, -np.eye(4)])])
+        lp = np.hstack((lp, -np.matmul(Ad, x0)))
+        up = np.hstack((up, -np.matmul(Ad, x0)))
+
+        # Barrier Constraint
+        sorted_ids = sorted(
+            range(len(agents)),
+            key=lambda k: np.linalg.norm(
+                agents[k].position - agents[agent_idx].position
+            ),
+        )
+        sorted_ids = [i for i in sorted_ids if i != agent_idx]  # Remove self
+        for j in range(len(agents)):
+            if j == agent_idx:
+                continue
+
+            if isinstance(gamma, float):
+                gcbf = gamma
+            else:
+                dist_id = sorted_ids.index(j)
+                gcbf = gamma[dist_id if dist_id < len(gamma) else -1]
+
+            pd = np.array(
+                [
+                    x0[0]
+                    - (
+                        agents[j].position[0] + agents[j].velocity[0] * agents[j].dt * t
+                    ),
+                    x0[1]
+                    - (
+                        agents[j].position[1] + agents[j].velocity[1] * agents[j].dt * t
+                    ),
+                ]
+            )
+            vd = np.array(
+                [x0[2] - agents[j].velocity[0], x0[3] - agents[j].velocity[1]]
+            )
+            c = pd + vd * agents[j].dt
+            h_const = (
+                np.dot(c, vd) / np.linalg.norm(c)
+                + np.sqrt(
+                    abs(amax) * (max(np.linalg.norm(c) - agents[agent_idx].Ds, 0))
+                )
+                - (1 - gcbf) * np.dot(pd, vd) / np.linalg.norm(pd)
+                - (1 - gcbf)
+                * np.sqrt(
+                    abs(amax) * (max(np.linalg.norm(pd) - agents[agent_idx].Ds, 0))
+                )
+            )  # Ignore u_{user}
+            h_u = c * agents[j].dt / np.linalg.norm(c)
+
+            ub = h_const
+            Ab = -h_u
+            A_np = np.vstack(
+                [A_np, np.hstack([np.expand_dims(Ab, axis=0), np.zeros((1, 4))])]
+            )
+            lp = np.hstack((lp, -np.inf))
+            up = np.hstack((up, ub))
+
+        # Slack variable
+        A_np = np.vstack([A_np, np.zeros((1, A_np.shape[1]))])
+        ab = np.zeros((A_np.shape[0], 1))
+        ab[-1, 0] = 1
+        for j in range(len(agents) - 1):
+            ab[-2 - j, 0] = -1
+        A_np = np.hstack([A_np, ab])
+        Ap = sparse.csc_matrix(A_np)
+        lp = np.hstack((lp, 0.0))
+        up = np.hstack((up, np.inf))
+
+        # Setup workspace and solve QP
+        prob = osqp.OSQP()
+        prob.setup(P, q, Ap, lp, up, verbose=False)
+        res = prob.solve()
+        ctrl = res.x[0:2]
+        x = res.x[2:6]
+
+    return ctrl, x
+
+
+def filter_output_primal_decay(
+    agent_idx, agents, x_nom, T=1, gamma=None, gamma_penalize=100.0
+):
+    """
+    OSQP: prob.setup(P, q, A, l, u, alpha)
+
+    min  1/2 * xT * P * x + q * x
+    s.t.  l <= A * x <= u
+
+    """
+
+    if gamma is None:
+        gamma = agents[agent_idx].gamma
+
+    x0 = np.array(
+        [
+            agents[agent_idx].position[0],
+            agents[agent_idx].position[1],
+            agents[agent_idx].velocity[0],
+            agents[agent_idx].velocity[1],
+        ]
+    )
+    amax = agents[agent_idx].max_acceleration
+
+    # Get dynamics (with error)
+    Ad, Bd = agents[agent_idx].update_linearization_err()
+    Av = Ad[2:4, :]
+    Bv = Bd[2:4, :]
+
+    decay_pw = gamma_penalize
+    desired_gamma = gamma  # We set the new variable as (x_gamma - desired_gamma)
+
+    for t in range(T):
+        # MPC Problem (u(0), x(1), eps)
+        # Minimize position deviation
+        P = np.eye(8)
+        P[0, 0] = 0
+        P[1, 1] = 0
+        P[6, 6] = agents[agent_idx].eps
+        P[7, 7] = decay_pw
+        P = sparse.csc_matrix(P)
+        q = np.hstack([0.0, 0.0, -x_nom[:, t + 1], 0.0, 0.0])
+
+        # Velocity/Acceleration Constraints
+        mult = 1
+        up = mult * agents[agent_idx].max_velocity - np.matmul(Av, x0)
+        up = np.hstack(
+            (
+                up,
+                mult * agents[agent_idx].max_acceleration,
+                mult * agents[agent_idx].max_acceleration,
+            )
+        )
+        lp = -mult * agents[agent_idx].max_velocity - np.matmul(Av, x0)
+        lp = np.hstack(
+            (
+                lp,
+                -mult * agents[agent_idx].max_acceleration,
+                -mult * agents[agent_idx].max_acceleration,
+            )
+        )
+        A_np = np.vstack(
+            [
+                np.hstack([Bv, np.zeros((2, 4))]),
+                np.hstack([np.eye(2), np.zeros((2, 4))]),
+            ]
+        )
+
+        # Dynamics Constraint
+        A_np = np.vstack([A_np, np.hstack([Bd, -np.eye(4)])])
+        lp = np.hstack((lp, -np.matmul(Ad, x0)))
+        up = np.hstack((up, -np.matmul(Ad, x0)))
+
+        # Barrier Constraint
+        sorted_ids = sorted(
+            range(len(agents)),
+            key=lambda k: np.linalg.norm(
+                agents[k].position - agents[agent_idx].position
+            ),
+        )
+        sorted_ids = [i for i in sorted_ids if i != agent_idx]  # Remove self
+
+        redundant_dim_gamma = A_np.shape[0]
+        gamma_coefficient_vector = np.zeros((1, redundant_dim_gamma + len(agents) - 1))
+
+        for j in range(len(agents)):
+            if j == agent_idx:
+                continue
+
+            pd = np.array(
+                [
+                    x0[0]
+                    - (
+                        agents[j].position[0] + agents[j].velocity[0] * agents[j].dt * t
+                    ),
+                    x0[1]
+                    - (
+                        agents[j].position[1] + agents[j].velocity[1] * agents[j].dt * t
+                    ),
+                ]
+            )
+            vd = np.array(
+                [x0[2] - agents[j].velocity[0], x0[3] - agents[j].velocity[1]]
+            )
+            c = pd + vd * agents[j].dt
+
+            h_const = (
+                np.dot(c, vd) / np.linalg.norm(c)
+                + np.sqrt(
+                    abs(amax) * (max(np.linalg.norm(c) - agents[agent_idx].Ds, 0))
+                )
+                # - (1 - new_decision_variable - desired_gamma) * np.dot(pd, vd) / np.linalg.norm(pd)
+                - (1 - desired_gamma) * np.dot(pd, vd) / np.linalg.norm(pd)
+                - (1 - desired_gamma)
+                * np.sqrt(
+                    abs(amax) * (max(np.linalg.norm(pd) - agents[agent_idx].Ds, 0))
+                )  # + np.dot(pd, vd) / np.linalg.norm(pd) * new_decision_variable
+            )  # Ignore u_{user}
+
+            gamma_coefficient = -np.dot(pd, vd) / np.linalg.norm(pd) - np.sqrt(
+                abs(amax) * (max(np.linalg.norm(pd) - agents[agent_idx].Ds, 0))
+            )
+            gamma_coefficient_vector[0, redundant_dim_gamma + j - 1] = gamma_coefficient
+
+            h_u = c * agents[j].dt / np.linalg.norm(c)
+
+            ub = h_const
+            Ab = -h_u
+            A_np = np.vstack(
+                [A_np, np.hstack([np.expand_dims(Ab, axis=0), np.zeros((1, 4))])]
+            )
+            lp = np.hstack((lp, -np.inf))
+            up = np.hstack((up, ub))
+
+        # Slack variable
+        A_np = np.hstack([A_np, np.transpose(gamma_coefficient_vector)])
+        A_np = np.vstack([A_np, np.zeros((1, A_np.shape[1]))])
+        ab = np.zeros((A_np.shape[0], 1))
+        ab[-1, 0] = 1
+        for j in range(len(agents) - 1):
+            ab[-2 - j, 0] = -1
+        A_np = np.hstack([A_np, ab])
+        Ap = sparse.csc_matrix(A_np)
+        lp = np.hstack((lp, 0.0))
+        up = np.hstack((up, np.inf))
+
+        # Setup workspace and solve QP
+        prob = osqp.OSQP()
+        prob.setup(P, q, Ap, lp, up, verbose=False)
+        res = prob.solve()
+        ctrl = res.x[0:2]
+        x = res.x[2:6]
+        optimal_gamma = res.x[7] + desired_gamma
+        # print("optimal gamma: ", optimal_gamma)
+
+    return ctrl, x
+
+
+# Get nominal trajectory to give us desired input
+def get_trajectory(agent, goal=None, N=12, agents=None, agent_idx=None):
+    Ad, Bd = agent.update_linearization()
+
+    # Sizes
+    nx = 4
+    nu = 2
+
+    # Constraints
+    umin = -agent.max_acceleration * np.ones(nu)
+    umax = agent.max_acceleration * np.ones(nu)
+    xmin = np.array([-20, -20, -agent.max_velocity, -agent.max_velocity])
+    xmax = np.array([100, 100, agent.max_velocity, agent.max_velocity])
+
+    # Objective function
+    Q = sparse.diags(
+        [
+            10.0,
+            10.0,
+            1.0,
+            1.0,
+        ]
+    )
+    QN = Q
+    R = 0.02 * sparse.eye(nu)
+
+    # Initial and reference states
+    x_init = np.array(
+        [agent.position[0], agent.position[1], agent.velocity[0], agent.velocity[1]]
+    )
+    x0 = np.array(
+        [agent.position[0], agent.position[1], agent.velocity[0], agent.velocity[1]]
+    )
+    if goal is None:
+        xg = np.array([agent.goal[0], agent.goal[1], 0.0, 0.0])
+    else:
+        xg = np.array([goal[0], goal[1], 0.0, 0.0])
+
+    # Cast MPC problem to a QP: x = (x(0),x(1),...,x(N),u(0),...,u(N-1), eps)
+    # - quadratic objective
+    P = sparse.block_diag(
+        [sparse.kron(sparse.eye(N), Q), QN, sparse.kron(sparse.eye(N), R)]
+    ).tocsc()
+    # - linear objective
+    q = np.hstack([np.kron(np.ones(N), -Q.dot(xg)), -QN.dot(xg), np.zeros((N) * nu)])
+
+    # - linear dynamics
+    Ax = np.kron(np.eye(N + 1), -np.eye(nx)) + np.kron(np.eye(N + 1, k=-1), Ad)
+    Bu = np.kron(np.vstack([np.zeros((1, N)), np.eye(N)]), Bd)
+
+    # Dynamics constraints
+    Aeq = np.hstack([Ax, Bu])
+    leq = np.hstack([-x0[0], -x0[1], -x0[2], -x0[3], np.zeros((N) * nx)])
+    # leq = np.zeros((N+1)*nx)
+    ueq = leq
+
+    # - input and state constraints
+    Aineq = np.eye((N + 1) * nx + N * nu)
+    lineq = np.hstack([np.kron(np.ones(N + 1), xmin), np.kron(np.ones(N), umin)])
+    uineq = np.hstack([np.kron(np.ones(N + 1), xmax), np.kron(np.ones(N), umax)])
+    A_vel = np.hstack(
+        [
+            np.kron(np.eye(N + 1), np.array([[0, 0, 1, 0], [0, 0, 0, 1]])),
+            np.zeros((nu * (N + 1), nu * N)),
+        ]
+    )
+    Aineq = np.vstack([Aineq, A_vel])
+    lineq = np.hstack(
+        [
+            lineq,
+            np.kron(
+                np.ones(N + 1), np.array([-agent.max_velocity, -agent.max_velocity])
+            ),
+        ]
+    )
+    uineq = np.hstack(
+        [
+            uineq,
+            np.kron(np.ones(N + 1), np.array([agent.max_velocity, agent.max_velocity])),
+        ]
+    )
+
+    A = np.vstack([Aeq, Aineq])
+    l = np.hstack([leq, lineq])
+    u = np.hstack([ueq, uineq])
+
+    A = sparse.csc_matrix(A)
+
+    # Create an OSQP object
+    prob = osqp.OSQP()
+
+    # Setup workspace
+    prob.setup(P, q, A, l, u, warm_start=True, verbose=False)
+
+    # Simulate in closed loop
+    nsim = 1
+
+    # Store data Init
+    xst = np.zeros((nx, nsim))
+    ust = np.zeros((nu, nsim))
+
+    # Solve
+    res = prob.solve()
+
+    # Check solver status
+    if res.info.status != "solved":
+        raise ValueError("OSQP did not solve the problem!")
+
+    # Apply first control input to the plant
+    if agents is not None:
+        ctrl = res.x[-N * nu - 1 : -(N - 1) * nu - 1]
+    else:
+        ctrl = res.x[-N * nu : -(N - 1) * nu]
+    x0 = Ad.dot(x0) + Bd.dot(ctrl)
+
+    i = 0
+    # Store Data
+    xst[:, i] = x0
+    ust[:, i] = ctrl
+    x_path = np.transpose(np.reshape(res.x[0 : N * nx], (N, nx)))
+    if agents is not None:
+        u_path = np.reshape(res.x[-N * nu - 1 : -1], (N, nu))
+    else:
+        u_path = np.reshape(res.x[-N * nu :], (N, nu))
+
+    # Update initial state
+    l[:nx] = -x0
+    u[:nx] = -x0
+    prob.update(l=l, u=u)
+
+    return ctrl, x_path, x_init  # , u_path
+
+
+# Get nominal trajectory to give us desired input
+def predict_trajectory(
+    agent, u: np.ndarray, goal=None, N=12, agents=None, agent_idx=None
+):
+    Ad, Bd = agent.update_linearization()
+
+    # Sizes
+    nx = 4
+    nu = 2
+
+    # Constraints
+    umin = u - 0.01
+    umax = u + 0.01
+    xmin = np.array([-20, -20, -agent.max_velocity, -agent.max_velocity])
+    xmax = np.array([100, 100, agent.max_velocity, agent.max_velocity])
+
+    # Objective function
+    Q = sparse.diags(
+        [
+            10.0,
+            10.0,
+            1.0,
+            1.0,
+        ]
+    )
+    QN = Q
+    R = 0.02 * sparse.eye(nu)
+
+    # Initial and reference states
+    x_init = np.array(
+        [agent.position[0], agent.position[1], agent.velocity[0], agent.velocity[1]]
+    )
+    x0 = np.array(
+        [agent.position[0], agent.position[1], agent.velocity[0], agent.velocity[1]]
+    )
+    if goal is None:
+        xg = np.array([agent.goal[0], agent.goal[1], 0.0, 0.0])
+    else:
+        xg = np.array([goal[0], goal[1], 0.0, 0.0])
+
+    # Cast MPC problem to a QP: x = (x(0),x(1),...,x(N),u(0),...,u(N-1), eps)
+    # - quadratic objective
+    P = sparse.block_diag(
+        [sparse.kron(sparse.eye(N), Q), QN, sparse.kron(sparse.eye(N), R)]
+    ).tocsc()
+    # - linear objective
+    q = np.hstack([np.kron(np.ones(N), -Q.dot(xg)), -QN.dot(xg), np.zeros((N) * nu)])
+
+    # - linear dynamics
+    Ax = np.kron(np.eye(N + 1), -np.eye(nx)) + np.kron(np.eye(N + 1, k=-1), Ad)
+    Bu = np.kron(np.vstack([np.zeros((1, N)), np.eye(N)]), Bd)
+
+    # Dynamics constraints
+    Aeq = np.hstack([Ax, Bu])
+    leq = np.hstack([-x0[0], -x0[1], -x0[2], -x0[3], np.zeros((N) * nx)])
+    # leq = np.zeros((N+1)*nx)
+    ueq = leq
+
+    # - input and state constraints
+    Aineq = np.eye((N + 1) * nx + N * nu)
+    lineq = np.hstack([np.kron(np.ones(N + 1), xmin), np.kron(np.ones(N), umin)])
+    uineq = np.hstack([np.kron(np.ones(N + 1), xmax), np.kron(np.ones(N), umax)])
+    A_vel = np.hstack(
+        [
+            np.kron(np.eye(N + 1), np.array([[0, 0, 1, 0], [0, 0, 0, 1]])),
+            np.zeros((nu * (N + 1), nu * N)),
+        ]
+    )
+    Aineq = np.vstack([Aineq, A_vel])
+    lineq = np.hstack(
+        [
+            lineq,
+            np.kron(
+                np.ones(N + 1), np.array([-agent.max_velocity, -agent.max_velocity])
+            ),
+        ]
+    )
+    uineq = np.hstack(
+        [
+            uineq,
+            np.kron(np.ones(N + 1), np.array([agent.max_velocity, agent.max_velocity])),
+        ]
+    )
+
+    A = np.vstack([Aeq, Aineq])
+    l = np.hstack([leq, lineq])
+    u = np.hstack([ueq, uineq])
+
+    A = sparse.csc_matrix(A)
+
+    # Create an OSQP object
+    prob = osqp.OSQP()
+
+    # Setup workspace
+    prob.setup(P, q, A, l, u, warm_start=True, verbose=False)
+
+    # Simulate in closed loop
+    nsim = 1
+
+    # Store data Init
+    xst = np.zeros((nx, nsim))
+    ust = np.zeros((nu, nsim))
+
+    # Solve
+    res = prob.solve()
+
+    # Check solver status
+    if res.info.status != "solved":
+        raise ValueError("OSQP did not solve the problem!")
+
+    # Apply first control input to the plant
+    if agents is not None:
+        ctrl = res.x[-N * nu - 1 : -(N - 1) * nu - 1]
+    else:
+        ctrl = res.x[-N * nu : -(N - 1) * nu]
+    x0 = Ad.dot(x0) + Bd.dot(ctrl)
+
+    i = 0
+    # Store Data
+    xst[:, i] = x0
+    ust[:, i] = ctrl
+    x_path = np.transpose(np.reshape(res.x[0 : N * nx], (N, nx)))
+    if agents is not None:
+        u_path = np.reshape(res.x[-N * nu - 1 : -1], (N, nu))
+    else:
+        u_path = np.reshape(res.x[-N * nu :], (N, nu))
+
+    # Update initial state
+    l[:nx] = -x0
+    u[:nx] = -x0
+    prob.update(l=l, u=u)
+
+    return ctrl, x_path, x_init  # , u_path

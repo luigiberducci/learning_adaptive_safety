@@ -1,0 +1,2 @@
+from .quartic_polynomial import QuarticPolynomial
+from .quintic_polynomial import QuinticPolynomial

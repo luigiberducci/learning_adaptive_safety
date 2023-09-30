@@ -1,0 +1,15 @@
+gymnasium[other]
+pygame
+matplotlib
+numpy
+pydantic
+yamldataclassconfig
+numba
+casadi
+torch
+tensorboard
+pyclothoids
+scipy
+osqp
+git+https://github.com/luigiberducci/omnisafe.git#egg=omnisafe
+git+https://github.com/luigiberducci/f1tenth_gym.git@asrl-submission

@@ -1,0 +1,41 @@
+cost_weights:
+- 5.10581437
+- 5.66626275
+- 5.45050269
+- 4.87689428
+- 4.91318392
+- 3.90862532
+lat_grid_cols: 11
+lat_grid_lb: -1.5
+lat_grid_ub: 1.5
+lh_grid_lb: 0.6
+lh_grid_rows: 3
+lh_grid_ub: 1.2
+planning_frequency: 10
+safety_names:
+- map_collision_cost
+safety_scales:
+- 1.0
+- 1.0
+safety_thresholds:
+- -1.0
+- 0.01
+safety_slacks:
+- 1.0
+- 1.0
+score_names:
+- curvature_cost
+- get_length_cost
+- get_similarity_cost
+- get_follow_optim_cost
+- abs_v_cost
+- abs_vk_cost
+tracker: advanced_pure_pursuit
+tracker_params:
+  vgain: 1.0
+traj_points: 20
+traj_v_span_max: 1.0
+traj_v_span_min: 0.2
+traj_v_span_num: 5
+vgain: 0.85
+wb: 0.33

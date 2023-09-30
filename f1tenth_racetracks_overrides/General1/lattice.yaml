@@ -1,0 +1,40 @@
+agent: LatticePlanner
+collision_thres: 0.3
+get_follow_optim_cost: true
+get_length_cost: true
+get_similarity_cost: true
+lat_grid_cols: 11
+lat_grid_lb: -1.5
+lat_grid_ub: 1.5
+lh_grid_lb: 0.6
+lh_grid_rows: 3
+lh_grid_ub: 1.2
+planning_frequency: 10
+score_names:
+- curvature_cost
+- get_length_cost
+- get_similarity_cost
+- get_follow_optim_cost
+- get_map_collision
+- abs_v_cost
+- collision_cost
+tracker: pure_pursuit
+tracker_params:
+  vgain: 1.0
+traj_points: 15
+traj_v_span_max: 1.0
+traj_v_span_min: 0.2
+traj_v_span_num: 5
+wb: 0.33
+# note: params [vgain, *weights] taken from last generation of CMAES optimization
+# file obj_space_planning/es_src/es_model/31/default_CMA_budget_19200epoch120_score.npz
+vgain: 0.90773076
+weights:
+  - 6.12049301
+  - 6.28649145
+  - 5.28307303
+  - 6.64446921
+  - 3.4749945
+  - 5.44053879
+  - 5.58632744
+
