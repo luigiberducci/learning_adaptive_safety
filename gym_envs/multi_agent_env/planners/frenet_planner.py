@@ -77,8 +77,6 @@ class FrenetPlanner(Planner):
             },
             # trajectory constraints
             "max_speed": 8.0,  # not used TODO
-            "max_acceleration": 2.0,  # not used TODO
-            "max_curvature": 10.0,  # not used TODO
             "vgain": 1.0,  # velocity gain to scale the raceline velocity, in range [0, 1]
             # tracking parameters
             "planning_frequency": 10,
@@ -930,7 +928,7 @@ def get_map_collision(
     # points: (n, 2)
     ego_trajectories = ego_trajectories[
         :, :, CX_ID : CY_ID + 1
-    ]  # TODO rewrite it with CX_ID, CY_ID
+    ]
 
     all_traj_pts = np.ascontiguousarray(ego_trajectories).reshape(-1, 2)  # (nxm, 2)
     collisions = map_collision(

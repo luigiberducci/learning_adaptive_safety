@@ -37,7 +37,6 @@ if __name__ == "__main__":
     if args.seed is None:
         args.seed = np.random.randint(0, 1000000)
 
-    # todo
     env_id = get_env_id(args.env_id, args.use_cbf, args.use_ctrl)
     cfg_path = pathlib.Path(__file__).parent / "gym_envs" / "cfgs" / f"{env_id}.yaml"
     if not cfg_path.exists():
