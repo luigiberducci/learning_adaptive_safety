@@ -20,7 +20,7 @@ The implementation has been tested with `Python 3.8` under `Ubuntu 20.04`.
    
 ## Docker
 
-For better reproducibility, we will relese soon a Dockerfile 
+For better reproducibility, we will release soon a Dockerfile 
 to build a container with all the necessary dependencies. :construction_worker:
 
 
