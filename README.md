@@ -50,6 +50,7 @@ where the exp-id `[0-6]` denotes runs with
 
 The results will be saved in the `logs/baselines` folder.
 
+<!--
 ## Experiment 2 - Ablation Study
 
 ![exp2](docs/exp2.png)
@@ -74,7 +75,7 @@ where the exp-id `[0-3]` denotes runs with vanilla CBF and optimal-decay CBF on 
 The same script can be adapted to evaluate checkpoints of the trained models.
 
 The results will be saved in the `logs/static_eval` folder.
-
+-->
 
 # Citation
 ```

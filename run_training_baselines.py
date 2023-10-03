@@ -54,9 +54,10 @@ def main(args):
             "lambda_lr": 5e-2,
         }
     elif algo.endswith("PID"):
+        kp = 10.0 if "particle-env" in env_id else 1.0
         custom_cfgs["lagrange_cfgs"] = {
             "cost_limit": cost_limit,
-            "pid_kp": 1.0,
+            "pid_kp": kp,
             "pid_ki": 0.01,
             "pid_kd": 0.01,
         }
