@@ -47,7 +47,8 @@ exp=${env_id}_static_eval_n${neps}_gammas${ming}-${maxg}-${ng}_cbf${cbf_type}_us
 
 cmd="
 python ${script} --outdir ${logdir} --exp-id ${exp} --n-episodes ${neps} \
-                --grid-min-gamma ${ming} --grid-max-gamma ${maxg} --grid-gamma-n ${ng} --use-decay=${use_decay} \
+                --grid-min-gamma ${ming} --grid-max-gamma ${maxg} --grid-gamma-n ${ng} \
+                --cbf-type ${cbf_type} --use-decay=${use_decay} \
                 --grid-params ${grid_params} --seed ${seed} ${env_id}
 "
 
