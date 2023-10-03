@@ -1,12 +1,9 @@
 from typing import Dict, Any, List, Union
 
-import PIL
 import gymnasium
 import numpy as np
 
 import pygame
-import pyglet
-from PIL.Image import Transpose
 from pydantic.utils import deep_update
 
 from gym_envs.multi_agent_env.planners.planner import Planner
@@ -38,18 +35,18 @@ class MultiAgentRaceEnv(gymnasium.Env):
     }
 
     def __init__(
-        self,
-        track_name: str,
-        params: Dict[str, Any] = {},
-        npc_planners: List[Planner] = [],
-        seed: int = None,
-        render_mode: str = "human",
+            self,
+            track_name: str,
+            params: Dict[str, Any] = {},
+            npc_planners: List[Planner] = [],
+            seed: int = None,
+            render_mode: str = "human",
     ):
         # params
         self._params = self._default_sim_params
         self._params = deep_update(self._params, params)
         self.metadata["render_fps"] = (
-            100 // self._params["simulation"]["control_frequency"]
+                100 // self._params["simulation"]["control_frequency"]
         )
 
         sim_params = self._params["simulation"]
@@ -242,7 +239,7 @@ class MultiAgentRaceEnv(gymnasium.Env):
 
     @staticmethod
     def _get_flat_action(
-        action: Dict[str, Union[float, Dict[str, float]]]
+            action: Dict[str, Union[float, Dict[str, float]]]
     ) -> np.ndarray:
         check_single_agent = (
             lambda action: "steering" in action and "velocity" in action
@@ -288,7 +285,7 @@ class MultiAgentRaceEnv(gymnasium.Env):
 
         progress = frenet_coords[0] - self._last_frenet_s[agent_id]
         if (
-            abs(progress) > 1.0
+                abs(progress) > 1.0
         ):  # assumption: 1 meter of progress is due to crossing the finish line
             progress = 0.0
 
@@ -317,15 +314,15 @@ class MultiAgentRaceEnv(gymnasium.Env):
             [
                 f in old_obs
                 for f in [
-                    "scans",
-                    "poses_x",
-                    "poses_y",
-                    "poses_theta",
-                    "linear_vels_x",
-                    "linear_vels_y",
-                    "ang_vels_z",
-                    "collisions",
-                ]
+                "scans",
+                "poses_x",
+                "poses_y",
+                "poses_theta",
+                "linear_vels_x",
+                "linear_vels_y",
+                "ang_vels_z",
+                "collisions",
+            ]
             ]
         ), f"obs keys are {old_obs.keys()}"
         return {
@@ -496,28 +493,6 @@ class MultiAgentRaceEnv(gymnasium.Env):
 
         return joint_action
 
-    def _render(self):
-        if self.render_mode not in self.metadata["render_modes"]:
-            return
-        if self.render_mode in ["human", "human_fast"]:
-            self.env.render(mode=self.render_mode)
-        elif self.render_mode == "rgb_array":
-            self.env.render(mode="human_fast")
-            image_data = (
-                pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
-            )
-            fmt = "RGB"
-            pitch = image_data.width * len(fmt)
-            pil_image = PIL.Image.frombytes(
-                fmt,
-                (image_data.width, image_data.height),
-                image_data.get_data(fmt, pitch),
-            )
-            pil_image = pil_image.transpose(Transpose.FLIP_TOP_BOTTOM)
-            return np.array(pil_image)
-        else:
-            raise NotImplementedError(f"mode {self.render_mode} not implemented")
-
     def render(self):
         if self.window is None and self.render_mode == "human":
             pygame.init()
@@ -560,14 +535,14 @@ class MultiAgentRaceEnv(gymnasium.Env):
 
             # box from local to global coordinates
             x_rect_global = (
-                x_rect_car * np.cos(yaw_car_map)
-                - y_rect_car * np.sin(yaw_car_map)
-                + x_car_map
+                    x_rect_car * np.cos(yaw_car_map)
+                    - y_rect_car * np.sin(yaw_car_map)
+                    + x_car_map
             )
             y_rect_global = (
-                x_rect_car * np.sin(yaw_car_map)
-                + y_rect_car * np.cos(yaw_car_map)
-                + y_car_map
+                    x_rect_car * np.sin(yaw_car_map)
+                    + y_rect_car * np.cos(yaw_car_map)
+                    + y_car_map
             )
             yaw_rect_global = yaw_rect_car + yaw_car_map
 
