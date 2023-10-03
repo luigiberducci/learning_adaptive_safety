@@ -55,8 +55,10 @@ The results will be saved in the `logs/baselines` folder.
 
 ![exp2](docs/exp2.png)
 
-To reproduce the results of Experiment 2, the procedure consists of two steps:
-(1) training the adaptive agent and (2) evaluating it and compare with the control-theoretic baselines.
+To reproduce the results of Experiment 2, the procedure consists of three steps:
+(1) training the adaptive agent, 
+(2) evaluating the trained agent and 
+(3) evaluating the control-theoretic baselines.
 
 1. To train the adaptive agent, run from the project directory:
 ```
@@ -66,7 +68,18 @@ where the exp-id `[0-1]` denotes runs on each of the two environments.
 
 The logs will be saved in the `logs/only_adaptive` folder.
 
-2. To collect simulations with the control-theoretic baselines, run:
+2. To evaluate the adaptive agent, adapt the script in `script/run_static_eval.sh`.
+For example, for the multi-robot navigation, run the following command:
+```
+python evaluation/test_different_gammas.py 
+                --outdir logs/static_eval --exp-id ablate-model --n-episodes 100 \
+                --checkpoints <path-to-checkpoint-0> <path-to-checkpoint-1> <path-to-checkpoint-2>
+                --checkpoints-names agent0 agent1 agent2 \ 
+                --grid-params n_agents=3,5,7 --seed 42 particle-env-v0
+```
+This is going to evaluate the three checkpoints, and store the logs in the `logs/static_eval` folder.
+
+3. To collect simulations with the control-theoretic baselines, run:
 ```
 ./script/run_static_eval.sh [0-3]
 ```
