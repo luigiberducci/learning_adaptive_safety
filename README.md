@@ -77,7 +77,8 @@ python evaluation/test_different_gammas.py
                 --checkpoints-names agent0 agent1 agent2 \ 
                 --grid-params n_agents=3,5,7 --seed 42 particle-env-v0
 ```
-This is going to evaluate the three checkpoints, and store the logs in the `logs/static_eval` folder.
+This is going to evaluate the three checkpoints, collecting 100 episodes for each configuration with 3, 5, and 7 robots.
+The logs are stored in the folder `logs/static_eval`.
 
 3. To collect simulations with the control-theoretic baselines, run:
 ```
