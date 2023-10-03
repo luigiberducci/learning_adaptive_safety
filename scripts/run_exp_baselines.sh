@@ -59,7 +59,7 @@ use_ctrl=$(echo $exp_args | cut -d' ' -f7)
 cost_limit=$(echo $exp_args | cut -d' ' -f8)
 
 cmd="
-python ${script} --algo ${algo} --env-id ${env_id} --num-envs ${numenvs} \
+python ${script} --algo ${algo} --env-id ${env_id} --num-envs ${numenvs} --total-timesteps ${total_timesteps} \
        --use-cbf ${use_cbf} --use-ctrl ${use_ctrl} --cost-limit ${cost_limit} \
        --log-dir ${logdir}
 "

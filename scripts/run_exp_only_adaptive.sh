@@ -43,7 +43,7 @@ exp=run_ns${ns}_climit${cl}_$(date +'%Y%m%d')
 
 cmd="
 python ${script} --env-id ${env_id} --log-dir ${logdir} --exp-name ${exp} --total-timesteps ${ns} \
-                 --cost-limit ${cost_limit} --num-envs ${num_envs}
+                 --cost-limit ${cost_limit} --num-envs ${num_envs} --use-cbf ${use_cbf} --use-ctrl ${use_ctrl}
 "
 
 for ((i=1;i<${nrepeats}+1;i++)); do
