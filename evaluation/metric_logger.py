@@ -1049,9 +1049,9 @@ class F110MetricLogger(MetricLogger):
 
 
 def logger_factory(env_id: str, **kwargs) -> MetricLogger:
-    if "particle-env-v0" in env_id:
+    if "particle-env" in env_id:
         return ParticleEnvMetricLogger(**kwargs)
-    elif "f110-multi-agent-v0" in env_id:
+    elif "f110-multi-agent" in env_id:
         return F110MetricLogger(**kwargs)
     else:
         raise NotImplementedError()

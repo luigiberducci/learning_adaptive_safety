@@ -226,7 +226,7 @@ def load_checkpoint(
         else:
             raise FileNotFoundError(f"Could not find args.yaml in {base_dir}")
 
-        env_id = get_env_id(train_args.env_id, train_args.use_cbf, train_args.use_ctrl)
+        env_id = get_env_id(env_id, train_args.use_cbf, train_args.use_ctrl)
         cfg_path = pathlib.Path(__file__).parent.parent / "gym_envs" / "cfgs" / f"{env_id}.yaml"
         if not cfg_path.exists():
             raise FileNotFoundError(f"Env config file {cfg_path} does not exist.")

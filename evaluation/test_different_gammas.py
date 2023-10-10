@@ -377,7 +377,7 @@ if __name__ == "__main__":
         "env_id",
         type=str,
         help="Environment ID",
-        choices=["particle-env-v0", "f110-multi-agent-v0"],
+        choices=["particle-env-v0", "particle-env-v1", "f110-multi-agent-v0", "f110-multi-agent-v1"],
     )
 
     args = parser.parse_args()
