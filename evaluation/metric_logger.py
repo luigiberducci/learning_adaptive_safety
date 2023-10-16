@@ -36,7 +36,7 @@ params = {
     "text.usetex": False,
     "text.latex.preamble": r"\usepackage{amsmath}",
     "font.family": "serif",
-    "font.serif": ["Computer Modern Serif"],
+    #"font.serif": ["Computer Modern Serif"],
 }
 plt.rcParams.update(params)
 
