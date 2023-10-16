@@ -33,7 +33,7 @@ params = {
     "legend.handlelength": 1.0,
     "legend.handletextpad": 0.1,
     "legend.columnspacing": 0.5,
-    "text.usetex": True,
+    "text.usetex": False,
     "text.latex.preamble": r"\usepackage{amsmath}",
     "font.family": "serif",
     "font.serif": ["Computer Modern Serif"],
