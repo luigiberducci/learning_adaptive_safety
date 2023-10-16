@@ -50,11 +50,19 @@ where the exp-id `[0-6]` denotes runs with
 
 The results will be saved in the `logs/baselines` folder.
 
-<!--
+
 ## Experiment 2 - Ablation Study
 
 ![exp2](docs/exp2.png)
 
+We provide a couple of ablate models to augment built-in controllers with adaptive safety in the `checkpoints` folder.
+To play with trained models with adaptive safety, run:
+```
+./script/run_checkpoint_eval.sh [0-1]
+```
+where the exp-id `[0-1]` denotes runs for particle-env and racing environments respectively.
+
+<!--
 To reproduce the results of Experiment 2, the procedure consists of three steps:
 (1) training the adaptive agent, 
 (2) evaluating the trained agent and 
@@ -71,13 +79,19 @@ The logs will be saved in the `logs/only_adaptive` folder.
 2. To evaluate the adaptive agent, adapt the script in `script/run_static_eval.sh`.
 For example, for the multi-robot navigation, run the following command:
 ```
-python evaluation/test_different_gammas.py 
-                --outdir logs/static_eval --exp-id ablate-model --n-episodes 100 \
-                --checkpoints <path-to-checkpoint-0> <path-to-checkpoint-1> <path-to-checkpoint-2>
-                --checkpoints-names agent0 agent1 agent2 \ 
-                --grid-params n_agents=3,5,7 --seed 42 particle-env-v0
+python evaluation/test_different_gammas.py --outdir logs/only_adaptive/evaluations/ \ 
+            --n-episodes 100 --checkpoints <path-to-model.pt> \
+            --grid-params n_agents=3,5,7 --seed 42 particle-env-v1
 ```
-This is going to evaluate the three checkpoints, and store the logs in the `logs/static_eval` folder.
+and for the racing environment:
+```
+python evaluation/test_different_gammas.py --outdir logs/only_adaptive/evaluations/ \
+            --n-episodes 100 --checkpoints <path-to-model.pt> \
+            --grid-params vgain=0.5,0.6,0.7 --seed 42 f110-multi-agent-v1
+```
+
+This is going to evaluate the checkpoint, collecting 100 episodes for each configuration of parameters.
+The logs are stored in the folder `logs/only_adaptive/evaluations/`.
 
 3. To collect simulations with the control-theoretic baselines, run:
 ```

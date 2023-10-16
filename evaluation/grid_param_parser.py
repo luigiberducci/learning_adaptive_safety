@@ -13,7 +13,7 @@ from rl.crpo import Agent
 from training_env_factory import (
     load_env_param_factory,
     load_cbf_param_factory,
-    make_env_factory,
+    make_env_factory, get_env_id,
 )
 
 
@@ -226,10 +226,18 @@ def load_checkpoint(
         else:
             raise FileNotFoundError(f"Could not find args.yaml in {base_dir}")
 
-        env_params = load_env_param_factory(env_id=env_id)(train_args)
-        cbf_params = load_cbf_param_factory(env_id=env_id)(train_args)
+        env_id = get_env_id(env_id, train_args.use_cbf, train_args.use_ctrl)
+        cfg_path = pathlib.Path(__file__).parent.parent / "gym_envs" / "cfgs" / f"{env_id}.yaml"
+        if not cfg_path.exists():
+            raise FileNotFoundError(f"Env config file {cfg_path} does not exist.")
 
-        envs = make_env_factory(env_id=env_id)(
+        with open(cfg_path) as f:
+            data = yaml.load(f, Loader=yaml.FullLoader)
+            base_env_id = data["base_env"]
+            env_params = data["env_params"]
+            cbf_params = data["cbf_params"]
+
+        envs = make_env_factory(env_id=base_env_id)(
             env_id=train_args.env_id,
             env_params=env_params,
             cbf_params=cbf_params,
