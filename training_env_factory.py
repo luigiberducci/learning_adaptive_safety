@@ -265,10 +265,11 @@ def get_env_id(env_id: str, use_cbf: bool, use_ctrl: bool, use_decay: bool = Fal
         cbf = f"{cbf}decay" if use_cbf and use_decay else cbf
         env_id = f"particle-env-{ctrl}-{cbf}-{env_v}"
     elif env_id == "f110-multi-agent-v0" or env_id == "f110-multi-agent-v1":
+        env_v = env_id.split("-")[-1]
         ctrl = "auto" if use_ctrl else "rl"
         cbf = "cbf" if use_cbf else "none"
         cbf = f"{cbf}decay" if use_cbf and use_decay else cbf
-        env_id = f"f110-multi-agent-{ctrl}-{cbf}-v0"
+        env_id = f"f110-multi-agent-{ctrl}-{cbf}-{env_v}"
     else:
         raise ValueError(f"env_id {env_id} is not supported")
 
