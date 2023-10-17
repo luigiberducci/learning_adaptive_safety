@@ -62,48 +62,6 @@ To play with trained models with adaptive safety, run:
 ```
 where the exp-id `[0-1]` denotes runs for particle-env and racing environments respectively.
 
-<!--
-To reproduce the results of Experiment 2, the procedure consists of three steps:
-(1) training the adaptive agent, 
-(2) evaluating the trained agent and 
-(3) evaluating the control-theoretic baselines.
-
-1. To train the adaptive agent, run from the project directory:
-```
-./script/run_exp_only_adaptive.sh [0-1]
-```
-where the exp-id `[0-1]` denotes runs on each of the two environments.
-
-The logs will be saved in the `logs/only_adaptive` folder.
-
-2. To evaluate the adaptive agent, adapt the script in `script/run_static_eval.sh`.
-For example, for the multi-robot navigation, run the following command:
-```
-python evaluation/test_different_gammas.py --outdir logs/only_adaptive/evaluations/ \ 
-            --n-episodes 100 --checkpoints <path-to-model.pt> \
-            --grid-params n_agents=3,5,7 --seed 42 particle-env-v1
-```
-and for the racing environment:
-```
-python evaluation/test_different_gammas.py --outdir logs/only_adaptive/evaluations/ \
-            --n-episodes 100 --checkpoints <path-to-model.pt> \
-            --grid-params vgain=0.5,0.6,0.7 --seed 42 f110-multi-agent-v1
-```
-
-This is going to evaluate the checkpoint, collecting 100 episodes for each configuration of parameters.
-The logs are stored in the folder `logs/only_adaptive/evaluations/`.
-
-3. To collect simulations with the control-theoretic baselines, run:
-```
-./script/run_static_eval.sh [0-3]
-```
-where the exp-id `[0-3]` denotes runs with vanilla CBF and optimal-decay CBF on each of the two environments. 
-
-The same script can be adapted to evaluate checkpoints of the trained models.
-
-The results will be saved in the `logs/static_eval` folder.
--->
-
 # Citation
 ```
 @misc{berducci2023learning,
