@@ -5,7 +5,7 @@ import numpy as np
 
 from gym_envs.multi_agent_env.common.track import (
     extract_forward_curvature,
-    extract_forward_raceline,
+    extract_forward_raceline
 )
 from gym_envs.multi_agent_env import MultiAgentRaceEnv
 from gym_envs.multi_agent_env.common.utils import traj_global2local
@@ -159,9 +159,9 @@ class VehicleTrackObservationWrapper(gym.ObservationWrapper):
         return obs
 
 
-def test_multiagent_observation_wrapper():
-    from gym_envs.core.track import Track
-    from planners.planner_factory import planner_factory
+if __name__ == "__main__":
+    from gym_envs.multi_agent_env.planners.planner_factory import planner_factory
+    from gym_envs.multi_agent_env.common.track import Track
 
     track = Track.from_track_name("General1")
     opp = planner_factory(planner="pp", track=track, agent_id="npc0")
@@ -174,7 +174,9 @@ def test_multiagent_observation_wrapper():
 
     env = VehicleTrackObservationWrapper(env)
 
+    print("action space:")
     print(env.action_space)
+    print("observation space:")
     print(env.observation_space)
 
     obs, _ = env.reset(options={"mode": "random_back"})
