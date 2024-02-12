@@ -82,7 +82,8 @@ class VehicleTrackObservationWrapper(gym.ObservationWrapper):
             agent_obs = {}
             for feature in self.vehicle_features:
                 agent_obs[feature] = env.observation_space["ego"].spaces[feature]
-            obs_dict[f"vehicle_nearby{i}"] = gym.spaces.Dict(agent_obs)
+            agent_id = f"vehicle_nearby{i}" if i > 0 else "ego"
+            obs_dict[agent_id] = gym.spaces.Dict(agent_obs)
         # track features
         for feature in self.track_features:
             obs_dict[feature] = self.track_feature_space_factory(feature)
@@ -162,17 +163,19 @@ class VehicleTrackObservationWrapper(gym.ObservationWrapper):
         distances = np.linalg.norm(np.array(all_poses)[:, :2] - ego_pose[:2], axis=1)
         closest_ids = np.argsort(distances)[: self.n_vehicles]
         for i, nid in enumerate(closest_ids):
-            agent_id = self.agents_ids[nid]
-            obs[f"vehicle_nearby{i}"] = {}
+            orig_agent_id = self.agents_ids[nid]
+            new_agent_id = "ego" if i == 0 else f"vehicle_nearby{i}"
+            obs[new_agent_id] = {}
             for feature in self.vehicle_features:
-                obs[f"vehicle_nearby{i}"][feature] = np.array(
-                    observation[agent_id][feature]
+                obs[new_agent_id][feature] = np.array(
+                    observation[orig_agent_id][feature]
                 )
         # zero padding for missing vehicles
         for i in range(self.n_vehicles - len(closest_ids)):
-            obs[f"vehicle_nearby{len(closest_ids) + i}"] = {}
+            new_agent_id = f"vehicle_nearby{len(closest_ids) + i}"
+            obs[new_agent_id] = {}
             for feature in self.vehicle_features:
-                obs[f"vehicle_nearby{len(closest_ids) + i}"][feature] = np.zeros_like(
+                obs[new_agent_id][feature] = np.zeros_like(
                     observation["ego"][feature]
                 )
         for feature in self.track_features:
