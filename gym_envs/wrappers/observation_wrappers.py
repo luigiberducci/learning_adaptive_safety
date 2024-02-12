@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Dict, Any
 
 import gymnasium as gym
@@ -5,10 +6,36 @@ import numpy as np
 
 from gym_envs.multi_agent_env.common.track import (
     extract_forward_curvature,
-    extract_forward_raceline
+    extract_forward_raceline,
 )
 from gym_envs.multi_agent_env import MultiAgentRaceEnv
 from gym_envs.multi_agent_env.common.utils import traj_global2local
+
+
+def assert_vehicle_features(
+    vehicle_features: list[str], agents_ids: list[str], obs_space: gym.Space
+) -> None:
+    """
+    Assert that the vehicle features are in the observation space of the agents
+    :param features: list of string, identifying the vehicle features
+    :param agents_ids: list of string, identifying the agents
+    :param obs_space: dictionary observation space
+    """
+    assert isinstance(vehicle_features, list), "vehicle_features must be a list"
+    assert all(
+        isinstance(feature, str) for feature in vehicle_features
+    ), "vehicle_features must be a list of strings"
+    assert isinstance(agents_ids, list), "agents_ids must be a list"
+    assert all(
+        isinstance(agent_id, str) for agent_id in agents_ids
+    ), "agents_ids must be a list of strings"
+    assert isinstance(obs_space, gym.spaces.Dict), "obs_space must be a gym.spaces.Dict"
+    for agent_id in agents_ids:
+        for feature in vehicle_features:
+            assert agent_id in obs_space.spaces, f"{agent_id} not in obs-space"
+            assert (
+                feature in obs_space[agent_id].spaces
+            ), f"{feature} not in obs-space of {agent_id}"
 
 
 class VehicleTrackObservationWrapper(gym.ObservationWrapper):
@@ -42,12 +69,11 @@ class VehicleTrackObservationWrapper(gym.ObservationWrapper):
         )
         self.n_vehicles = 1 + n_obs_vehicles
 
-        # check observation features are present in environment
-        for agent_id in self.agents_ids:
-            for feature in self.vehicle_features:
-                assert (
-                    feature in env.observation_space[agent_id].spaces
-                ), f"{feature} not in obs-space of {agent_id}"
+        assert_vehicle_features(
+            vehicle_features=self.vehicle_features,
+            agents_ids=self.agents_ids,
+            obs_space=self.observation_space,
+        )
 
         # prepare new observation space
         # vehicle features
@@ -63,6 +89,26 @@ class VehicleTrackObservationWrapper(gym.ObservationWrapper):
 
         self.observation_space = gym.spaces.Dict(obs_dict)
 
+        # aux
+        centerline = self.track.centerline
+        self.centerline_xyk = np.stack(
+            [
+                centerline.xs,
+                centerline.ys,
+                centerline.kappas,
+            ],
+            axis=1,
+        )
+        raceline = self.track.raceline
+        self.raceline_xyv = np.stack(
+            [
+                raceline.xs,
+                raceline.ys,
+                raceline.velxs,
+            ],
+            axis=1,
+        )
+
     def track_feature_space_factory(self, feature_name: str) -> gym.spaces.Box:
         if feature_name == "curvature":
             return gym.spaces.Box(low=-10, high=10, shape=(1, self.n_curvature_points))
@@ -77,29 +123,12 @@ class VehicleTrackObservationWrapper(gym.ObservationWrapper):
         self, feature_name: str, obs: Dict[str, Any]
     ) -> np.ndarray:
         if feature_name == "curvature":
-            """
-            extract forward curvature from the track centerline.
-            the curvature profile is sampled at a fixed interval (5 wps) for a fixed length (10 samples).
-            so in total, the curvature profile is 5*10 waypoints long (approx. 10 meters in General1).
-            """
-            ego_pos = obs["ego"]["pose"][:2]
-            centerline_xyk = np.stack(
-                [
-                    self.track.centerline.xs,
-                    self.track.centerline.ys,
-                    self.track.centerline.kappas,
-                ],
-                axis=1,
-            )
-
-            ks = extract_forward_curvature(
-                trajectory_xyk=centerline_xyk,
-                point=ego_pos,
+            extract_forward_curvature(
+                trajectory_xyk=self.centerline_xyk,
+                point=obs["ego"]["pose"][:2],
                 forward_distance=self.forward_curv_lookahead,
                 n_points=self.n_curvature_points,
             )
-            ks = np.array(ks, dtype=np.float32)[None, :]
-            return ks
         elif feature_name == "raceline":
             """
             extract forward raceline from the track centerline.
@@ -107,21 +136,14 @@ class VehicleTrackObservationWrapper(gym.ObservationWrapper):
             so in total, the raceline profile is 5*10 waypoints long (approx. 10 meters in General1).
             """
             ego_pose = obs["ego"]["pose"]
-            raceline_xyv = np.stack(
-                [
-                    self.track.raceline.xs,
-                    self.track.raceline.ys,
-                    self.track.raceline.velxs,
-                ],
-                axis=1,
-            )
 
             waypoints = extract_forward_raceline(
-                trajectory_xyv=raceline_xyv,
+                trajectory_xyv=self.raceline_xyv,
                 point=ego_pose[:2],
                 forward_distance=self.forward_curv_lookahead,
                 n_points=self.n_raceline_points,
             )
+
             waypoints[:, :2] = traj_global2local(ego_pose, waypoints[:, :2])
             return waypoints
         elif feature_name == "time_to_go":
@@ -159,6 +181,52 @@ class VehicleTrackObservationWrapper(gym.ObservationWrapper):
         return obs
 
 
+class VectorTrackObservationWrapper(gym.ObservationWrapper):
+    def __init__(
+        self,
+        env: gym.Env,
+        vehicle_features: list[str] = None,
+        track_features: list[str] = None,
+        forward_lookahead: float = 10.0,
+        n_points: int = 10,
+        n_observed_vehicles: int = 1,
+    ):
+        super().__init__(env)
+
+        self.vehicle_features = vehicle_features or ["pose", "velocity"]
+        self.track_features = track_features or ["left_boundary", "right_boundary"]
+
+        self.forward_lookahead = forward_lookahead
+        self.n_points = n_points
+        self.n_observed_vehicles = n_observed_vehicles
+
+        # check observation features are present in environment
+        for agent_id in self.agents_ids:
+            for feature in self.vehicle_features:
+                assert (
+                    feature in env.observation_space[agent_id].spaces
+                ), f"{feature} not in obs-space of {agent_id}"
+
+        # prepare new observation space
+        # vehicle features
+        obs_dict = {}
+        # todo relative observation
+
+        # track features
+        for feature in self.track_features:
+            obs_dict[feature] = self.track_feature_space_factory(feature)
+
+        self.observation_space = gym.spaces.Dict(obs_dict)
+
+    def track_feature_space_factory(self, feature_name: str) -> gym.spaces.Box:
+        if feature_name == "left_boundary":
+            return gym.spaces.Box(low=-10, high=10, shape=(self.n_points, 2))
+        if feature_name == "right_boundary":
+            return gym.spaces.Box(low=-10, high=10, shape=(self.n_points, 2))
+        else:
+            raise ValueError(f"unknown track feature {feature_name}")
+
+
 if __name__ == "__main__":
     from gym_envs.multi_agent_env.planners.planner_factory import planner_factory
     from gym_envs.multi_agent_env.common.track import Track
@@ -173,6 +241,7 @@ if __name__ == "__main__":
     )
 
     env = VehicleTrackObservationWrapper(env)
+    #env = VectorTrackObservationWrapper(env)
 
     print("action space:")
     print(env.action_space)
