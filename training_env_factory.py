@@ -129,15 +129,15 @@ def make_f110_env(
         # observations
         vehicle_features = env_params["vehicle_features"]
         track_features = env_params["track_features"]
-        forward_curv_lookahead = env_params["forward_curv_lookahead"]
-        n_curvature_points = env_params["n_curvature_points"]
+        lookahead = env_params["lookahead"]
+        n_points = env_params["n_points"]
 
         env = VehicleTrackObservationWrapper(
             env,
             vehicle_features=vehicle_features,
             track_features=track_features,
-            forward_curv_lookahead=forward_curv_lookahead,
-            n_curvature_points=n_curvature_points,
+            lookahead=lookahead,
+            n_points=n_points,
         )
         env = FlattenObservation(env)
         env = FrameStack(env, cbf_params["frame_stack"])
@@ -181,8 +181,8 @@ def load_f110_env_params(parser_args) -> dict:
         "local_path_generation": parser_args.local_path_generation,
         "vehicle_features": parser_args.vehicle_features,
         "track_features": parser_args.track_features,
-        "forward_curv_lookahead": parser_args.forward_curv_lookahead,
-        "n_curvature_points": parser_args.n_curvature_points,
+        "forward_curv_lookahead": parser_args.lookahead,
+        "n_curvature_points": parser_args.n_points,
     }
     return params
 

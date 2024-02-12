@@ -25,10 +25,11 @@ env_params:
     - "velocity"
     - "frenet_coords"
   track_features:
-    - "curvature"
-    - "raceline"
-  forward_curv_lookahead: 10.0
-  n_curvature_points: 10
+    - "vec_raceline"
+    - "left_boundary"
+    - "right_boundary"
+  lookahead: 10.0
+  n_points: 10
 
 cbf_params:
   use_cbf: False
