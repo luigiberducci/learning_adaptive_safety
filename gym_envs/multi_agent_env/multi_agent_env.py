@@ -9,6 +9,7 @@ from pydantic.utils import deep_update
 from gym_envs.multi_agent_env.planners.planner import Planner
 from gym_envs.multi_agent_env.common.utils import cartesian_to_frenet, nearest_point
 from gym_envs.multi_agent_env.common.reset_fn import reset_fn_factory, RESET_MODES
+from gym_envs.multi_agent_env.rendering import make_renderer
 from gym_envs.multi_agent_env.rewards import reward_fn_factory
 from gym_envs.multi_agent_env.common.termination_fn import termination_fn_factory
 from gym_envs.multi_agent_env.common.track import Track
@@ -27,11 +28,6 @@ class MultiAgentRaceEnv(gymnasium.Env):
     metadata = {
         "render_modes": ["human", "human_fast", "rgb_array"],
         "render_fps": 100,
-    }
-
-    VEHICLE_COLOR_PALETTE = {
-        "ego": (0, 125, 0),
-        "npc": (0, 0, 255),
     }
 
     def __init__(
@@ -158,9 +154,15 @@ class MultiAgentRaceEnv(gymnasium.Env):
         # render
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
-        self.window = None
-        self.clock = None
-        self.window_size = 2000  # The size of the PyGame window
+        if self.render_mode == "human_fast":
+            self.metadata["render_fps"] *= 10  # boost fps by 10x
+        self.renderer, self.render_spec = make_renderer(
+            params=self.params,
+            track=self.track,
+            agent_ids=self.agents_ids,
+            render_mode=render_mode,
+            render_fps=self.metadata["render_fps"],
+        )
 
     @property
     def state(self):
@@ -494,109 +496,19 @@ class MultiAgentRaceEnv(gymnasium.Env):
         return joint_action
 
     def render(self):
-        if self.window is None and self.render_mode == "human":
-            pygame.init()
-            pygame.display.init()
-            self.window = pygame.display.set_mode((self.window_size, self.window_size))
-        if self.clock is None and self.render_mode == "human":
-            self.clock = pygame.time.Clock()
+        if self.render_mode not in self.metadata["render_modes"]:
+            return
 
-        # draw the track
-        track_map = self.track.occupancy_map  # shape (2000, 2000)
-        track_map = np.stack(
-            [track_map, track_map, track_map], axis=-1
-        )  # shape (2000, 2000, 3)
-        canvas = pygame.surfarray.make_surface(track_map)
-
-        # First we draw the target
-        pygame.draw.rect(
-            canvas,
-            (255, 255, 0),
-            pygame.Rect((0, 0), (10, 10)),
-        )
-
-        for agent_id in self._complete_state:
-            if agent_id == "ego":
-                color = self.VEHICLE_COLOR_PALETTE["ego"]
-            else:
-                color = self.VEHICLE_COLOR_PALETTE["npc"]
-
-            x_car, y_car, yaw_car = self._complete_state[agent_id]["pose"]
-            car_length, car_width = 0.58, 0.31
-
-            x_car_map = (x_car - self.track.spec.origin[0]) / self.track.spec.resolution
-            y_car_map = (y_car - self.track.spec.origin[1]) / self.track.spec.resolution
-            yaw_car_map = yaw_car
-
-            # box local coordinates
-            x_rect_car = -(car_length / 2) / self.track.spec.resolution
-            y_rect_car = -(car_width / 2) / self.track.spec.resolution
-            yaw_rect_car = 0
-
-            # box from local to global coordinates
-            x_rect_global = (
-                    x_rect_car * np.cos(yaw_car_map)
-                    - y_rect_car * np.sin(yaw_car_map)
-                    + x_car_map
-            )
-            y_rect_global = (
-                    x_rect_car * np.sin(yaw_car_map)
-                    + y_rect_car * np.cos(yaw_car_map)
-                    + y_car_map
-            )
-            yaw_rect_global = yaw_rect_car + yaw_car_map
-
-            pixel_pos = (int(y_rect_global), int(x_rect_global))
-            pixel_length = int(car_length / self.track.spec.resolution)
-            pixel_width = int(car_width / self.track.spec.resolution)
-
-            # color according to the state
-            collision = self._complete_state[agent_id]["collision"]
-            color = (255, 0, 0) if collision else color
-
-            # create vehicle rectangle surface
-            vehicle_size = (pixel_length * 2, pixel_width * 2)
-            vehicle_surface = pygame.Surface(vehicle_size)
-            vehicle_surface.fill((255, 255, 255))
-            vehicle_surface.set_alpha(150)
-            pygame.draw.rect(
-                vehicle_surface,
-                color,
-                pygame.Rect(
-                    (pixel_length - pixel_length / 2, pixel_width - pixel_width / 2),
-                    (pixel_length, pixel_width),
-                ),
-            )
-
-            # rotate the vehicle rectangle
-            vehicle_surface = pygame.transform.rotate(
-                vehicle_surface, np.rad2deg(yaw_rect_global) - 90
-            )
-            canvas.blit(vehicle_surface, pixel_pos)
-
-        canvas = pygame.transform.rotate(canvas, 90)
-
-        if self.render_mode == "human":
-            # The following line copies our drawings from `canvas` to the visible window
-            self.window.blit(canvas, canvas.get_rect())
-            pygame.event.pump()
-            pygame.display.update()
-
-            # We need to ensure that human-rendering occurs at the predefined framerate.
-            # The following line will automatically add a delay to keep the framerate stable.
-            self.clock.tick(self.metadata["render_fps"])
-        else:  # rgb_array
-            return np.transpose(
-                np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2)
-            )
+        self.renderer.update(state=self.render_obs)
+        return self.renderer.render()
 
     def close(self):
-        if self.window is not None:
-            pygame.quit()
-            self.window = None
-        if self.clock is not None:
-            self.clock = None
-        self.env.close()
+        """
+        Ensure renderer is closed upon deletion
+        """
+        if self.renderer is not None:
+            self.renderer.close()
+        super().close()
 
 
 def render_callback(env_renderer):
