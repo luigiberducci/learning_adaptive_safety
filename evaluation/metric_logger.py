@@ -7,15 +7,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
 from scipy import stats
-import time
-import warnings
-from abc import abstractmethod
-from typing import Dict, List, Iterable, Union
-
-import matplotlib.pyplot as plt
-import numpy as np
-from matplotlib.lines import Line2D
-from scipy import stats
 
 params = {
     "ytick.color": "black",
@@ -680,8 +671,9 @@ def plot_bars(
 
         # axis ticks
         # mark adaptive with bold
+        ada_label = r"\textbf{Adaptive}" if params["text.usetex"] else "Adaptive"
         xtickslabels = [
-            r"\textbf{Adaptive}" if x == "Adaptive" else x for x in unique_xs
+            ada_label if x == "Adaptive" else x for x in unique_xs
         ]
         ax.set_xticks(
             [
