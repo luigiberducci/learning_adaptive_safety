@@ -102,7 +102,6 @@ class MultiAgentRaceEnv(gymnasium.Env):
         # reward fn
         self.reward_fn = reward_fn_factory(self, **reward_params)
 
-        self.env.add_render_callback(render_callback)
         self._scan_size = self.env.sim.agents[0].scan_simulator.num_beams
         self._scan_range = self.env.sim.agents[0].scan_simulator.max_range
 
@@ -495,6 +494,15 @@ class MultiAgentRaceEnv(gymnasium.Env):
 
         return joint_action
 
+    def add_render_callback(self, callback_func):
+        """
+        Add extra drawing function to call during rendering.
+
+        Args:
+            callback_func (function (EnvRenderer) -> None): custom function to called during render()
+        """
+
+        self.renderer.add_renderer_callback(callback_func)
     def render(self):
         if self.render_mode not in self.metadata["render_modes"]:
             return
@@ -509,22 +517,6 @@ class MultiAgentRaceEnv(gymnasium.Env):
         if self.renderer is not None:
             self.renderer.close()
         super().close()
-
-
-def render_callback(env_renderer):
-    # custom extra drawing function
-    e = env_renderer
-
-    # update camera to follow car
-    x = e.cars[0].vertices[::2]
-    y = e.cars[0].vertices[1::2]
-    top, bottom, left, right = max(y), min(y), min(x), max(x)
-    e.score_label.x = left
-    e.score_label.y = top - 700
-    e.left = left - 800
-    e.right = right + 800
-    e.top = top + 800
-    e.bottom = bottom - 800
 
 
 if __name__ == "__main__":

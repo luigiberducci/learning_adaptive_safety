@@ -43,6 +43,8 @@ class Raceline:
         xs: np.ndarray,
         ys: np.ndarray,
         velxs: np.ndarray,
+        drights: np.ndarray = None,
+        dlefts: np.ndarray = None,
         ss: np.ndarray = None,
         psis: np.ndarray = None,
         kappas: np.ndarray = None,
@@ -59,6 +61,9 @@ class Raceline:
         self.kappas = kappas
         self.velxs = velxs
         self.accxs = accxs
+        self.drights = drights
+        self.dlefts = dlefts
+
 
         # approximate track length by linear-interpolation of x,y waypoints
         # note: we could use 'ss' but sometimes it is normalized to [0,1], so we recompute it here
@@ -81,17 +86,23 @@ class Raceline:
             10 if "General1" in filepath.name else 1
         )  # General1 has very bad centerline, need to be smoothed
         xx, yy = waypoints[::step, 0], waypoints[::step, 1]
+
         # close loop
         xx = np.append(xx, xx[0])
         yy = np.append(yy, yy[0])
         spline = CubicSpline2D(xx, yy)
         ds = 0.1
 
-        ss, xs, ys, yaws, ks = [], [], [], [], []
+        ss, xs, ys, yaws, ks, ddr, ddl = [], [], [], [], [], [], []
         smoothyaws, smoothks = [], []
 
         for i_s in np.arange(0, spline.s[-1], ds):
             x, y = spline.calc_position(i_s)
+            pos = np.array([x, y])
+            _, _, _, i = nearest_point(pos, waypoints[:, :2])
+            i = i % waypoints.shape[0]
+            dr = waypoints[i, 2]
+            dl = waypoints[i, 3]
 
             yaw = spline.calc_yaw(i_s)
             k = spline.calc_curvature(i_s)
@@ -101,6 +112,8 @@ class Raceline:
 
             xs.append(x)
             ys.append(y)
+            ddr.append(dr)
+            ddl.append(dl)
             yaws.append(yaw)
             ks.append(k)
             ss.append(i_s)
@@ -112,6 +125,8 @@ class Raceline:
             xs=np.array(xs),
             ys=np.array(ys),
             velxs=np.ones_like(ss) * fixed_speed,
+            drights=np.array(ddr),
+            dlefts=np.array(ddl),
             psis=np.array(smoothyaws),
             kappas=np.array(smoothks),
             spline=spline,
@@ -308,18 +323,47 @@ def extract_forward_raceline(
     dist = 0.0
     final_waypoint_id = begin_i
     while dist < forward_distance:
-        final_waypoint_id = (final_waypoint_id + 1) % trajectory_xyv.shape[0]
+        final_waypoint_id = final_waypoint_id + 1
+        final_waypoint_id_norm = final_waypoint_id % trajectory_xyv.shape[0]
         dist += np.linalg.norm(
-            trajectory_xyv[final_waypoint_id, :2]
-            - trajectory_xyv[final_waypoint_id - 1, :2]
+            trajectory_xyv[final_waypoint_id_norm, :2]
+            - trajectory_xyv[final_waypoint_id_norm - 1, :2]
         )
 
     forward_xyvs = np.empty((n_points, 3))
-    for i in range(n_points):
-        idx = (begin_i + i) % trajectory_xyv.shape[0]
+    delta_i = int((final_waypoint_id - begin_i) // n_points)
+    for i in np.arange(n_points):
+        idx = (begin_i + i * delta_i) % trajectory_xyv.shape[0]
         forward_xyvs[i] = trajectory_xyv[idx]
 
     return forward_xyvs
+
+@njit(cache=True)
+def extract_forward_boundary(
+    trajectory_xy: np.ndarray,
+    first_point: np.ndarray,
+    last_point: np.ndarray,
+    n_points: int = 10,
+) -> np.ndarray:
+    """extract forward curvature starting a given point on the track"""
+    _, _, _, begin_i = nearest_point(first_point, trajectory_xy)
+    _, _, _, end_i = nearest_point(last_point, trajectory_xy)
+
+    # compute distance between first and last point
+    dist = 0.0
+    for i in range(begin_i, end_i):
+        dist += np.linalg.norm(
+            trajectory_xy[i, :2]
+            - trajectory_xy[i - 1, :2]
+        )
+
+    # sample n points equally spaced
+    forward_xys = np.empty((n_points, 2))
+    for i in range(n_points):
+        idx = (begin_i + i * (end_i - begin_i) // n_points) % trajectory_xy.shape[0]
+        forward_xys[i] = trajectory_xy[idx, :2]
+
+    return forward_xys
 
 
 if __name__ == "__main__":
