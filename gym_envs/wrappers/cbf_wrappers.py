@@ -189,8 +189,7 @@ def test_cbf_wrapper_f110():
         safety_dim=safety_dim,
         gamma_range=gamma_range,
         make_cbf=make_cbf,
-        use_delta_gamma=True,
-        dt=0.1,
+        use_delta_gamma=False,
     )
 
     obs, _ = env.reset()
