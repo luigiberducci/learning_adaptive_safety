@@ -48,6 +48,7 @@ if __name__ == "__main__":
         env_params = data["env_params"]
         cbf_params = data["cbf_params"]
 
+    print(env_id)
     args.env_id = base_env_id
     make_env = make_env_factory(env_id=args.env_id)
 

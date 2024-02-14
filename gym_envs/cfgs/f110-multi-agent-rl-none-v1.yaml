@@ -37,4 +37,5 @@ cbf_params:
   cbf_gamma_range:
       - 0.01
       - 1.0
+  use_delta_gamma: True
   frame_stack: 1

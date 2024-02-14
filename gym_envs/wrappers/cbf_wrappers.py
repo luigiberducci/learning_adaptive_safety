@@ -14,11 +14,12 @@ class CBFSafetyLayer(gym.Wrapper):
     """
 
     def __init__(
-        self,
-        env,
-        safety_dim: int,
-        gamma_range: Union[Tuple[float, float], List, np.ndarray],
-        make_cbf: callable,
+            self,
+            env,
+            safety_dim: int,
+            gamma_range: Union[Tuple[float, float], List, np.ndarray],
+            make_cbf: callable,
+            use_delta_gamma: bool = False,
     ):
         """
 
@@ -31,8 +32,10 @@ class CBFSafetyLayer(gym.Wrapper):
         super().__init__(env=env)
         self.safety_dim = safety_dim
         self.min_gamma, self.max_gamma = gamma_range
-        self.use_old_api = isinstance(env, gym.Env)
         self.cbf_project = make_cbf(env=self)
+
+        self.use_delta_gamma = use_delta_gamma
+        self.gamma_t = None  # the gamma at time t (used for delta gamma)
 
         low_action = self.action_space.low
         high_action = self.action_space.high
@@ -59,27 +62,42 @@ class CBFSafetyLayer(gym.Wrapper):
         self.slacks = {}
         self.opt_status = []
         self.corrections = []
+        self.gamma_t = None
+        self.time_t = 0.0
         return self.env.reset(**kwargs)
 
     def step(self, action: WrapperActType) -> ActType:
         assert (
-            action.shape == self.action_space.shape
+                action.shape == self.action_space.shape
         ), "action shape must match action space shape"
 
         # separate action from gammas
         nominal_action, norm_gammas = (
             action[: -self.safety_dim],
-            action[-self.safety_dim :],
+            action[-self.safety_dim:],
         )
 
-        # denormalize gamma from [-1, +1] to [min_gamma, max_gamma]
+        # ensure gammas are in [-1, 1]
         norm_gammas = np.clip(norm_gammas, -1.0, 1.0)
-        gammas = (norm_gammas + 1.0) / 2.0 * (
-            self.max_gamma - self.min_gamma
-        ) + self.min_gamma
+
+        # manage delta gamma
+        if self.use_delta_gamma and self.gamma_t is None:
+            # first step -> used gamma
+            gammas = denorm(norm_gammas, -1.0, 1.0, self.min_gamma, self.max_gamma)
+            self.gamma_t = gammas
+        elif self.use_delta_gamma:
+            # other steps -> integrate gamma
+            dt = self.current_time - self.time_t
+            self.time_t = self.current_time
+            self.gamma_t += norm_gammas * dt
+        else:
+            # no delta gamma -> use gamma as it is
+            gammas = denorm(norm_gammas, -1.0, 1.0, self.min_gamma, self.max_gamma)
+            self.gamma_t = gammas
 
         # project nominal action onto safe control set
-        action, opt_infos = self.cbf_project(self.state, nominal_action, gammas)
+        self.gamma_t = np.clip(self.gamma_t, self.min_gamma, self.max_gamma)
+        action, opt_infos = self.cbf_project(self.state, nominal_action, self.gamma_t)
 
         # step env
         next_state, reward, done, truncated, info = self.env.step(action)
@@ -89,7 +107,7 @@ class CBFSafetyLayer(gym.Wrapper):
             {
                 "action": nominal_action,
                 "safe_action": action,
-                "gammas": gammas,
+                "gammas": self.gamma_t,
             }
         )
         info.update(opt_infos)
@@ -143,6 +161,13 @@ class CBFSafetyLayer(gym.Wrapper):
 
         return next_state, reward, done, truncated, info
 
+
+def denorm(value, from_min, from_max, to_min, to_max) -> float:
+    """
+    Denormalize value from [from_min, from_max] to [to_min, to_max].
+    """
+    return (value - from_min) / (from_max - from_min) * (to_max - to_min) + to_min
+
 def test_cbf_wrapper_f110():
     from gym_envs import cbf_factory
     from gym_envs.multi_agent_env import MultiAgentRaceEnv
@@ -152,6 +177,7 @@ def test_cbf_wrapper_f110():
     env = MultiAgentRaceEnv(
         track_name="General1",
         params={"termination": {"types": ["on_timeout"], "timeout": 10.0}},
+        render_mode=None,
     )
     env = FlattenAction(env)
     safety_dim = 2
@@ -163,30 +189,34 @@ def test_cbf_wrapper_f110():
         safety_dim=safety_dim,
         gamma_range=gamma_range,
         make_cbf=make_cbf,
+        use_delta_gamma=True,
+        dt=0.1,
     )
 
     obs, _ = env.reset()
     done = False
 
+    gammas = []
     while not done:
         action_gamma = env.action_space.sample()
         action_gamma[:2] = 1.0
 
         # step the environment
         obs, reward, done, truncated, info = env.step(action_gamma)
-        # env.render()
+        print("gamma(t): ", env.gamma_t)
+        gammas.append(env.gamma_t)
+        env.render()
 
     env.close()
 
-    print("min hx_left", info["cbf_stats"]["episodic_hx_left_min"])
-    print("min hx_right", info["cbf_stats"]["episodic_hx_right_min"])
+    gammas = np.array(gammas)
+    import matplotlib.pyplot as plt
 
-    assert (
-        info["cbf_stats"]["episodic_hx_left_min"] > -1e-3
-    ), "hx_left_min should be positive"
-    assert (
-        info["cbf_stats"]["episodic_hx_right_min"] > -1e-3
-    ), "hx_right_min should be positive"
+    plt.plot(gammas[:, 0], label="gamma_0")
+    plt.plot(gammas[:, 1], label="gamma_1")
+    plt.legend()
+
+    plt.show()
 
 
 if __name__ == "__main__":

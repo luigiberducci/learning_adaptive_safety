@@ -2,7 +2,7 @@
 
 # create list of exp arguments
 args=(
-  # n-eps env-id min-gamma max-gamma gamma-n cbf-type use-decay seed grid-params
+  # n-eps env-id min-gamma max-gamma gamma-n use-decay seed grid-params
   #
   # particle-env-v0
   "100 particle-env-v0 0.0 1.0 10 False 42 n_agents=3,5,7"

@@ -85,6 +85,7 @@ def make_f110_base_env(
             env,
             safety_dim=cbf_params["safety_dim"],
             gamma_range=cbf_params["cbf_gamma_range"],
+            use_delta_gamma=cbf_params["use_delta_gamma"],
             make_cbf=make_cbf,
         )
 
