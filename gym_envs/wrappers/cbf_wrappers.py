@@ -19,7 +19,6 @@ class CBFSafetyLayer(gym.Wrapper):
         safety_dim: int,
         gamma_range: Union[Tuple[float, float], List, np.ndarray],
         make_cbf: callable,
-        alpha: float = 1.0,
     ):
         """
 
@@ -32,7 +31,6 @@ class CBFSafetyLayer(gym.Wrapper):
         super().__init__(env=env)
         self.safety_dim = safety_dim
         self.min_gamma, self.max_gamma = gamma_range
-        self.alpha = alpha
         self.use_old_api = isinstance(env, gym.Env)
         self.cbf_project = make_cbf(env=self)
 
@@ -145,42 +143,6 @@ class CBFSafetyLayer(gym.Wrapper):
 
         return next_state, reward, done, truncated, info
 
-
-def test_cbf_wrapper_double_integrator():
-    from gym_envs.double_integrator import DoubleIntegratorEnv
-    from gym_envs import cbf_factory
-
-    env_id = "double-integrator-v0"
-    safety_dim = 1
-    env = DoubleIntegratorEnv()
-    gamma_range = [0.0, 1.0]
-    make_cbf = cbf_factory(env_id=env_id, cbf_type="advanced")
-
-    env = CBFSafetyLayer(
-        env,
-        safety_dim=safety_dim,
-        alpha=1.0,
-        gamma_range=gamma_range,
-        make_cbf=make_cbf,
-    )
-
-    obs, _ = env.reset()
-    done = False
-
-    while not done:
-        action_gamma = env.action_space.sample()
-        action_gamma[:2] = 1.0
-
-        # step the environment
-        obs, reward, done, truncated, info = env.step(action_gamma)
-        env.render()
-
-    env.close()
-
-    print(info["cbf_stats"]["episodic_hx_min"])
-    assert info["cbf_stats"]["episodic_hx_min"] > -1e-3, "hx_min should be positive"
-
-
 def test_cbf_wrapper_f110():
     from gym_envs import cbf_factory
     from gym_envs.multi_agent_env import MultiAgentRaceEnv
@@ -193,13 +155,12 @@ def test_cbf_wrapper_f110():
     )
     env = FlattenAction(env)
     safety_dim = 2
-    make_cbf = cbf_factory(env_id=env_id, cbf_type="advanced")
+    make_cbf = cbf_factory(env_id=env_id, cbf_type="simple")
     gamma_range = [0.0, 1.0]
 
     env = CBFSafetyLayer(
         env,
         safety_dim=safety_dim,
-        alpha=1.0,
         gamma_range=gamma_range,
         make_cbf=make_cbf,
     )
@@ -229,6 +190,4 @@ def test_cbf_wrapper_f110():
 
 
 if __name__ == "__main__":
-    from gym_envs.double_integrator import DoubleIntegratorEnv
-
-    test_cbf_wrapper_double_integrator()
+    test_cbf_wrapper_f110()

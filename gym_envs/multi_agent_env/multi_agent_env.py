@@ -36,7 +36,7 @@ class MultiAgentRaceEnv(gymnasium.Env):
             params: Dict[str, Any] = {},
             npc_planners: List[Planner] = [],
             seed: int = None,
-            render_mode: str = "human",
+            render_mode: str = None,
     ):
         # params
         self._params = self._default_sim_params
