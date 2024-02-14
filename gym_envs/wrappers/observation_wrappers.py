@@ -159,9 +159,9 @@ class VehicleTrackObservationWrapper(gym.ObservationWrapper):
         return obs
 
 
-def test_multiagent_observation_wrapper():
-    from gym_envs.core.track import Track
-    from planners.planner_factory import planner_factory
+if __name__ == "__main__":
+    from gym_envs.multi_agent_env.planners.planner_factory import planner_factory
+    from gym_envs.multi_agent_env.common.track import Track
 
     track = Track.from_track_name("General1")
     opp = planner_factory(planner="pp", track=track, agent_id="npc0")
@@ -172,15 +172,34 @@ def test_multiagent_observation_wrapper():
         render_mode="human",
     )
 
-    env = VehicleTrackObservationWrapper(env)
+    # rendering
+    def render_waypoints(e):
+        """
+        Callback to render waypoints.
+        """
+        points = np.stack([track.raceline.xs, track.raceline.ys], axis=1)
+        e.render_closed_lines(points, color=(128, 0, 0), size=1)
 
+    env.add_render_callback(render_waypoints)
+
+    env = VehicleTrackObservationWrapper(
+        env,
+        vehicle_features=["pose", "frenet_coords", "velocity"],
+        track_features=["curvature", "raceline"],
+    )
+
+    print("action space:")
     print(env.action_space)
+    print("observation space:")
     print(env.observation_space)
 
     obs, _ = env.reset(options={"mode": "random_back"})
     done = False
+    debug = False
 
+    t = 0
     while not done:
+        t += 1
         action = env.action_space.sample()
         obs, reward, done, _, info = env.step(action)
         env.render()
