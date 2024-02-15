@@ -120,7 +120,6 @@ class PurePursuitPlanner(Planner):
             self.vgain = np.random.uniform(minvgain, maxvgain)
 
         self.vgain = np.clip(self.vgain, 0.0, 1.0)  # sanity check
-        print("vgain", self.vgain)
 
     def update_raceline(self, raceline: Raceline):
         self.waypoints = np.stack(
