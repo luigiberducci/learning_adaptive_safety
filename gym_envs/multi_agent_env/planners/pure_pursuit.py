@@ -100,15 +100,27 @@ class PurePursuitPlanner(Planner):
             assert kwargs["vgain"] >= 0.0, "vgain must be non-negative"
             self.params["vgain"] = kwargs["vgain"]
         if "vgain_std" in kwargs:
-            assert isinstance(kwargs["vgain_std"], float), "vgain_std must be a float"
-            assert kwargs["vgain_std"] >= 0.0, "vgain_std must be non-negative"
-            self.params["vgain_std"] = kwargs["vgain_std"]
+            assert isinstance(kwargs["vgain_std"], float) or all(isinstance(kwargs["vgain_std"], float)), "vgain_std must be a float or a list of floats"
+            if isinstance(kwargs["vgain_std"], float):
+                assert kwargs["vgain_std"] >= 0.0, "vgain_std must be non-negative"
+                self.params["vgain_std"] = kwargs["vgain_std"]
+            elif len(kwargs["vgain_std"]) == 2:
+                assert all([std >= 0.0 for std in kwargs["vgain_std"]]), "vgain_std must be non-negative"
+                self.params["vgain_std"] = kwargs["vgain_std"]
+            else:
+                raise ValueError("vgain_std must be a float or a list of floats of length 2")
 
         mu = self.params["vgain"]
         std = self.params["vgain_std"]
 
-        self.vgain = np.random.normal(mu, std)
+        if isinstance(std, float):
+            self.vgain = np.random.normal(mu, std)
+        else:
+            minvgain, maxvgain = mu - std[0], mu + std[1]
+            self.vgain = np.random.uniform(minvgain, maxvgain)
+
         self.vgain = np.clip(self.vgain, 0.0, 1.0)  # sanity check
+        print("vgain", self.vgain)
 
     def update_raceline(self, raceline: Raceline):
         self.waypoints = np.stack(
@@ -326,24 +338,24 @@ if __name__ == "__main__":
     import gymnasium as gym
     from planner import run_planner
 
-    render = True
+    render_mode = "human"
 
     # test pp controller in spielberg track
-    env = gym.make("f110-multi-agent-v0", track_name="Spielberg")
+    env = gym.make("f110-multi-agent-v0", track_name="General1", render_mode=render_mode)
 
     print("testing pure pursuit planner")
     pp = PurePursuitPlanner(
-        env.track, params={"vgain": (0.5, 0.1)}, render_wps_rgb=(0, 255, 0)
+        env.track, params={"vgain": 0.5, "vgain_std": (0.1, 0.1)}, render_wps_rgb=(0, 255, 0)
     )
-    env.add_render_callback(pp.render_waypoints)
-    run_planner(env, pp, render=render)
+
+    run_planner(env, pp)
     print()
 
     print("testing adaptive pure pursuit planner")
     pp = AdvancedPurePursuitPlanner(
         env.track, params={"vgain": 1.0}, render_wps_rgb=(0, 255, 0)
     )
-    run_planner(env, pp, render=render)
+    run_planner(env, pp)
     print()
 
     env.close()

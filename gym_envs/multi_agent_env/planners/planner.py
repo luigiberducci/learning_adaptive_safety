@@ -110,7 +110,6 @@ class MultiObjectivePlanner(Planner):
 def run_planner(
     env: gym.Env,
     planner: Planner,
-    render: bool = False,
     max_steps: int = np.Inf,
     reset_mode: str = "random_back",
 ):
@@ -127,12 +126,10 @@ def run_planner(
 
     t0 = time.time()
     while not done and steps < max_steps:
-        action = planner.plan(obs)
+        action = planner.plan(obs, agent_id="ego")
         # print(action)
         obs, reward, done, truncated, info = env.step(action)
-
-        if render:
-            env.render()
+        env.render()
 
         steps += 1
 
@@ -155,4 +152,4 @@ if __name__ == "__main__":
 
     env = gym.make("f110-multi-agent-v0", track_name="Spielberg")
     pp = DummyPlanner(params={"vgain": 4.0})
-    run_planner(env, pp, render=True)
+    run_planner(env, pp)

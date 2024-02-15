@@ -1103,6 +1103,6 @@ if __name__ == "__main__":
 
     for i in range(10):
         run_planner(
-            env, planner, render=True, max_steps=1000, reset_mode="hardcurve_back"
+            env, planner, max_steps=1000, reset_mode="hardcurve_back"
         )
     env.close()

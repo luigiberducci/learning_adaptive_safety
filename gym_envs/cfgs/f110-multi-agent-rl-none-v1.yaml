@@ -7,9 +7,13 @@ env_params:
     - "pp"
   opp_params:
     - vgain: 0.6
-      vgain_std: 0.05
+      vgain_std:
+        - 0.10
+        - 0.10
     - vgain: 0.6
-      vgain_std: 0.05
+      vgain_std:
+        - 0.10
+        - 0.10
   termination_types:
     - "on_collision"
     - "on_any_cross_finish_line"

@@ -147,6 +147,6 @@ if __name__ == "__main__":
     planner = FollowTheGap()
 
     for _ in range(5):
-        run_planner(env, planner, render=True, max_steps=500, reset_mode="random_back")
+        run_planner(env, planner, max_steps=500, reset_mode="random_back")
 
     env.close()
