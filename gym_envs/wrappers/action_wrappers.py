@@ -99,7 +99,12 @@ class LocalPathActionWrapper(gym.Wrapper):
             track=env.track, params=planner_params, agent_id=self.agent_id
         )
 
+        self.original_obs = None
+
     def step(self, action: np.ndarray):
+        if self.original_obs is None:
+            raise ValueError("Original obs is None. Did you reset the env?")
+
         if not self.auto_mode:
             # set path goal from d, v actions
             dgoal = (action[0] + 1) / 2 * (self.max_d - self.min_d) + self.min_d
