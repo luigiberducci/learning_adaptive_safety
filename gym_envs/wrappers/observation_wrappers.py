@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import Dict, Any
 
 import gymnasium as gym
-import matplotlib.pyplot as plt
 import numpy as np
 
 from gym_envs.multi_agent_env.common.track import (
@@ -304,6 +303,7 @@ if __name__ == "__main__":
 
     env.add_render_callback(render_waypoints)
 
+    print("action space:")
     env = VehicleTrackObservationWrapper(
         env,
         vehicle_features=["pose", "frenet_coords", "velocity"],
@@ -324,50 +324,4 @@ if __name__ == "__main__":
         t += 1
         action = env.action_space.sample()
         obs, reward, done, _, info = env.step(action)
-
-        # debug
-        raceline = obs["raceline"]
-        vec_raceline = obs["vec_raceline"]
-        vec_lboundary = obs["left_boundary"]
-        vec_rboundary = obs["right_boundary"]
-
-        # plot arrows from 0,0 to rl points
-        if debug and t % 50 == 0:
-            fig, axes = plt.subplots(1, 2)
-            ax0, ax1 = axes
-
-            ax0.clear()
-            for i in range(raceline.shape[0]):
-                ax0.arrow(0, 0, raceline[i, 0], raceline[i, 1], head_width=0.02)
-
-            # plot arrows from 0,0 to first rl point, then from first to second, etc.
-            ax1.clear()
-            for vec_polyline in [vec_raceline, vec_lboundary, vec_rboundary]:
-                starting_pt = np.array([0.0, 0.0])
-                for i in range(vec_polyline.shape[0] - 1):
-                    starting_pt += vec_polyline[i][:2]
-                    ax1.arrow(
-                        starting_pt[0],
-                        starting_pt[1],
-                        vec_polyline[i + 1, 0],
-                        vec_polyline[i + 1, 1],
-                        head_width=0.02,
-                    )
-
-            # plot opp
-            for agent_id, agent_obs in obs.items():
-                if agent_id in env.track_features:
-                    continue
-                ax1.scatter(agent_obs["pose"][0], agent_obs["pose"][1], label=agent_id)
-
-            ax0.set_aspect("equal")
-            ax1.set_aspect("equal")
-
-            # invert y axis
-            ax0.set_ylim(ax0.get_ylim()[::-1])
-            ax1.set_ylim(ax1.get_ylim()[::-1])
-
-            plt.legend()
-            plt.show()
-
         env.render()
