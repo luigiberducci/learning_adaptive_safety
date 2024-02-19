@@ -428,218 +428,6 @@ def plot_bars(
     axes: List[plt.Axes],
     linestyle="-",
 ):
-    metrics = logger.metrics
-    barwidth = 0.9 / len(metrics)
-    all_types_gamma = ["S-CBF", "OD-CBF", "Adaptive", "Other"]
-
-    def get_type_gamma(gamma):
-        if isinstance(gamma, float) or (
-            isinstance(gamma, str) and gamma.replace(".", "", 1).isdigit()
-        ):
-            # if gamma can be cast to float
-            return "S-CBF"
-        if isinstance(gamma, str) and gamma.startswith("OD"):
-            # if gamma is a string and starts with OD
-            return "OD-CBF"
-        if isinstance(gamma, str) and "Ada" in gamma:
-            # if gamma is a string and starts with Ada
-            return "Adaptive"
-        return None
-
-    alls = sorted(set(all_stats[gby]))
-    colors = ["tab:green", "tab:red", "tab:blue", "tab:orange"]
-    linestyles = ["-", "--", "-.", ":"]
-
-    for i, (val, ax) in enumerate(zip(alls, axes)):
-        label = logger.params_meta[gby]["label"]
-        val_fn = logger.params_meta[gby]["val_fn"]
-        title = f"{label}={val_fn(val)}"
-        ax.set_title(title)
-
-        stat_ids = np.where(np.array(all_stats[gby]) == val)[0]
-
-        for im, metric in enumerate(metrics):
-            gammas = [all_stats[x_key][i] for i in stat_ids]
-            xs = [get_type_gamma(g) for g in gammas]
-            ys = [all_stats[metric][i] for i in stat_ids]
-
-            # normalize metric "length" to 0..1
-            if metric == "length":
-                _, maxlen = logger.metrics_meta["length"]["all_range"]
-                ys = [y / maxlen for y in ys]
-
-            # aggregate by type_gamma
-            unique_xs = list(set(xs))
-            ys_mean = [
-                np.mean([y for x, y in zip(xs, ys) if x == type_gamma])
-                for type_gamma in unique_xs
-            ]
-            ys_min = [
-                np.min([y for x, y in zip(xs, ys) if x == type_gamma])
-                for type_gamma in unique_xs
-            ]
-            ys_max = [
-                np.max([y for x, y in zip(xs, ys) if x == type_gamma])
-                for type_gamma in unique_xs
-            ]
-
-            # relative errors
-            ys_min = [y - y_min for y, y_min in zip(ys_mean, ys_min)]
-            ys_max = [y_max - y for y, y_max in zip(ys_mean, ys_max)]
-
-            # skip empty
-            if len(unique_xs) == 0:
-                continue
-
-            # plot error bar
-            xticks = [
-                float(all_types_gamma.index(x)) + im * barwidth for x in unique_xs
-            ]
-
-            for ip in range(len(xticks)):
-                label_metric = logger.metrics_meta[metric]["title"] if ip == 0 else None
-
-                if logger.metrics_meta[metric]["best_fn"] == np.min:
-                    marker = "v"
-                elif logger.metrics_meta[metric]["best_fn"] == np.max:
-                    marker = "^"
-                else:
-                    marker = "o"
-
-                ax.vlines(
-                    xticks[ip],
-                    0.0,
-                    ys_mean[ip],
-                    color=colors[im % len(linestyles)],
-                    linestyle=linestyle,
-                    linewidth=barwidth * 100,
-                    alpha=0.2,
-                    label=label_metric,
-                )
-                ax.scatter(
-                    xticks[ip],
-                    ys_mean[ip],
-                    color=colors[im % len(linestyles)],
-                    marker=marker,
-                    s=250,
-                    alpha=0.6,
-                )
-
-                # add error bar
-                error_alpha = 0.4
-                ax.vlines(
-                    xticks[ip],
-                    ys_mean[ip] - ys_min[ip],
-                    ys_mean[ip] + ys_max[ip],
-                    color=colors[im % len(linestyles)],
-                    linestyle=linestyle,
-                    alpha=error_alpha,
-                )
-                ax.scatter(
-                    xticks[ip],
-                    ys_mean[ip] - ys_min[ip],
-                    color=colors[im % len(linestyles)],
-                    marker="_",
-                    s=100,
-                    alpha=error_alpha,
-                )
-                ax.scatter(
-                    xticks[ip],
-                    ys_mean[ip] + ys_max[ip],
-                    color=colors[im % len(linestyles)],
-                    marker="_",
-                    s=100,
-                    alpha=error_alpha,
-                )
-
-        # axis limits
-        ax.set_xlim(-barwidth, len(unique_xs) - 1 + barwidth * len(metrics))
-        ax.set_ylim(0.0, 1.0)
-
-        # axis ticks
-        # mark adaptive with bold
-        ada_label = r"\textbf{Adaptive}" if params["text.usetex"] else "Adaptive"
-        xtickslabels = [
-            ada_label if x == "Adaptive" else x for x in unique_xs
-        ]
-        ax.set_xticks(
-            [
-                float(all_types_gamma.index(x)) + (len(metrics) - 1) * barwidth / 2
-                for x in unique_xs
-            ],
-            xtickslabels,
-        )
-
-        # axis labels
-        # ax.set_ylabel("Rate (\%)")
-
-    # legend
-    handles, labels = ax.get_legend_handles_labels()
-    # add two triangle markers (facing up and down) for "higher is better" and "lower is better"
-    marker_size, color, facecolor = 20, "k", "w"
-    handles += [
-        Line2D(
-            [],
-            [],
-            marker="v",
-            color=color,
-            markerfacecolor=facecolor,
-            markersize=marker_size,
-            linestyle="None",
-            label="Lower is better",
-        ),
-        Line2D(
-            [],
-            [],
-            marker="^",
-            color=color,
-            markerfacecolor=facecolor,
-            markersize=marker_size,
-            linestyle="None",
-            label="Higher is better",
-        ),
-    ]
-    # add delimiter of errors to legend to denote min/max
-    marker_size = 10
-    handles += [
-        Line2D(
-            [],
-            [],
-            color="k",
-            linestyle="-",
-            marker=2,
-            markersize=marker_size,
-            label="Min",
-        ),
-        Line2D(
-            [],
-            [],
-            color="k",
-            linestyle="-",
-            marker=3,
-            markersize=marker_size,
-            label="Max",
-        ),
-    ]
-
-    plt.gcf().legend(
-        handles=handles,
-        ncols=len(handles),
-        loc="lower center",
-    )
-
-    # use env as title
-    plt.gcf().suptitle(logger.env_name)
-
-
-def plot_bars_2(
-    all_stats: Dict[str, List[float]],
-    logger: MetricLogger,
-    x_key: str,
-    gby: str,
-    axes: List[plt.Axes],
-    linestyle="-",
-):
     """
     Like plot_bars, but group by metric instead of grouping by type.
 
@@ -673,6 +461,11 @@ def plot_bars_2(
     alls = sorted(set(all_stats[gby]))
     colors = ["tab:green", "tab:red", "tab:blue", "tab:orange"]
     linestyles = ["-", "--", "-.", ":"]
+    markers = {
+        "S-CBF": "s",
+        "OD-CBF": "D",
+        "Adaptive": "o"
+    }
 
     for i, (val, ax) in enumerate(zip(alls, axes)):
         label = logger.params_meta[gby]["label"]
@@ -682,9 +475,11 @@ def plot_bars_2(
 
         stat_ids = np.where(np.array(all_stats[gby]) == val)[0]
 
+        gammas = [all_stats[x_key][i] for i in stat_ids]
+        xs = [get_type_gamma(g) for g in gammas]
+        unique_xs = list(set(xs))
+
         for im, metric in enumerate(metrics):
-            gammas = [all_stats[x_key][i] for i in stat_ids]
-            xs = [get_type_gamma(g) for g in gammas]
             ys = [all_stats[metric][i] for i in stat_ids]
 
             # normalize metric "length" to 0..1
@@ -693,7 +488,6 @@ def plot_bars_2(
                 ys = [y / maxlen for y in ys]
 
             # aggregate by type_gamma
-            unique_xs = list(set(xs))
             ys_mean = [
                 np.mean([y for x, y in zip(xs, ys) if x == type_gamma])
                 for type_gamma in unique_xs
@@ -717,18 +511,12 @@ def plot_bars_2(
 
             # plot error bar
             xticks = [
-                float(all_types_gamma.index(x)) + im * barwidth for x in unique_xs
+                im + float(all_types_gamma.index(x)) * barwidth for x in unique_xs
             ]
 
             for ip in range(len(xticks)):
-                label_metric = logger.metrics_meta[metric]["title"] if ip == 0 else None
-
-                if logger.metrics_meta[metric]["best_fn"] == np.min:
-                    marker = "v"
-                elif logger.metrics_meta[metric]["best_fn"] == np.max:
-                    marker = "^"
-                else:
-                    marker = "o"
+                label = unique_xs[ip]
+                marker = markers[label]
 
                 ax.vlines(
                     xticks[ip],
@@ -738,7 +526,7 @@ def plot_bars_2(
                     linestyle=linestyle,
                     linewidth=barwidth * 100,
                     alpha=0.2,
-                    label=label_metric,
+                    label=label if im == 0 else None,
                 )
                 ax.scatter(
                     xticks[ip],
@@ -782,14 +570,11 @@ def plot_bars_2(
 
         # axis ticks
         # mark adaptive with bold
-        ada_label = r"\textbf{Adaptive}" if params["text.usetex"] else "Adaptive"
-        xtickslabels = [
-            ada_label if x == "Adaptive" else x for x in unique_xs
-        ]
+        xtickslabels = [m.capitalize() for m in metrics]
         ax.set_xticks(
             [
-                float(all_types_gamma.index(x)) + (len(metrics) - 1) * barwidth / 2
-                for x in unique_xs
+                i + (len(all_types_gamma) - 1) * barwidth / 2
+                for i in range(len(metrics))
             ],
             xtickslabels,
         )
@@ -801,28 +586,21 @@ def plot_bars_2(
     handles, labels = ax.get_legend_handles_labels()
     # add two triangle markers (facing up and down) for "higher is better" and "lower is better"
     marker_size, color, facecolor = 20, "k", "w"
-    handles += [
+
+    handles = [
         Line2D(
             [],
             [],
-            marker="v",
+            marker=marker,
             color=color,
             markerfacecolor=facecolor,
             markersize=marker_size,
             linestyle="None",
-            label="Lower is better",
-        ),
-        Line2D(
-            [],
-            [],
-            marker="^",
-            color=color,
-            markerfacecolor=facecolor,
-            markersize=marker_size,
-            linestyle="None",
-            label="Higher is better",
-        ),
+            label=k
+        )
+        for k, marker in markers.items()
     ]
+
     # add delimiter of errors to legend to denote min/max
     marker_size = 10
     handles += [

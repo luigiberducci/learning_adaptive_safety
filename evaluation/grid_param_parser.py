@@ -11,8 +11,6 @@ import yaml
 
 from rl.crpo import Agent
 from training_env_factory import (
-    load_env_param_factory,
-    load_cbf_param_factory,
     make_env_factory, get_env_id,
 )
 
