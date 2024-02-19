@@ -18,7 +18,7 @@ env_params:
   reset_mode: "section0.0-0.4_back"
   reward: "sparse_rel_progress"
   control_freq: 2
-  planning_freq: 10
+  planning_freq: 50
   local_path_generation: "waypoints"
   vehicle_features:
     - "pose"
