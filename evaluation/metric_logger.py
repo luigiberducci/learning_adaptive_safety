@@ -106,7 +106,6 @@ class MetricLogger:
                     x_key=x_key,
                     gby=gby,
                     axes=axes,
-                    margin_percent=margin_percent,
                 )
 
                 if outdir:
@@ -419,15 +418,18 @@ def plot_gby(
         )
 
 
-def plot_pareto(
+
+
+def plot_bars(
     all_stats: Dict[str, List[float]],
     logger: MetricLogger,
     x_key: str,
     gby: str,
     axes: List[plt.Axes],
     linestyle="-",
-    margin_percent=0.05,
 ):
+    metrics = logger.metrics
+    barwidth = 0.9 / len(metrics)
     all_types_gamma = ["S-CBF", "OD-CBF", "Adaptive", "Other"]
 
     def get_type_gamma(gamma):
@@ -439,108 +441,217 @@ def plot_pareto(
         if isinstance(gamma, str) and gamma.startswith("OD"):
             # if gamma is a string and starts with OD
             return "OD-CBF"
-        if isinstance(gamma, str) and gamma.startswith("Ada"):
+        if isinstance(gamma, str) and "Ada" in gamma:
             # if gamma is a string and starts with Ada
             return "Adaptive"
-        return "Other"
+        return None
 
-    metrics = logger.metrics
-    assert len(metrics) == 2, "Pareto plot only supports 2 metrics"
-
-    alls = set(all_stats[gby])
-    titles = [logger.metrics_meta[m]["title"] for m in metrics]
+    alls = sorted(set(all_stats[gby]))
+    colors = ["tab:green", "tab:red", "tab:blue", "tab:orange"]
+    linestyles = ["-", "--", "-.", ":"]
 
     for i, (val, ax) in enumerate(zip(alls, axes)):
-        gby_name = (
-            logger.params_meta[gby]["label"] if gby in logger.params_meta else gby
-        )
-        ax.set_title(f"{gby_name}={val}")
-        ax.set_xlabel(titles[0])
-        ax.set_ylabel(titles[1])
+        label = logger.params_meta[gby]["label"]
+        val_fn = logger.params_meta[gby]["val_fn"]
+        title = f"{label}={val_fn(val)}"
+        ax.set_title(title)
 
         stat_ids = np.where(np.array(all_stats[gby]) == val)[0]
 
-        gammas = [all_stats[x_key][i] for i in stat_ids]
-        gammas_types = [get_type_gamma(g) for g in gammas]
+        for im, metric in enumerate(metrics):
+            gammas = [all_stats[x_key][i] for i in stat_ids]
+            xs = [get_type_gamma(g) for g in gammas]
+            ys = [all_stats[metric][i] for i in stat_ids]
 
-        for type_gamma in all_types_gamma:
-            k = all_types_gamma.index(type_gamma)
-            xs = [all_stats[metrics[0]][i] for i in stat_ids]
-            ys = [all_stats[metrics[1]][i] for i in stat_ids]
+            # normalize metric "length" to 0..1
+            if metric == "length":
+                _, maxlen = logger.metrics_meta["length"]["all_range"]
+                ys = [y / maxlen for y in ys]
 
-            # filter by gamma type
-            xs = [x for x, g in zip(xs, gammas_types) if g == type_gamma]
-            ys = [y for y, g in zip(ys, gammas_types) if g == type_gamma]
+            # aggregate by type_gamma
+            unique_xs = list(set(xs))
+            ys_mean = [
+                np.mean([y for x, y in zip(xs, ys) if x == type_gamma])
+                for type_gamma in unique_xs
+            ]
+            ys_min = [
+                np.min([y for x, y in zip(xs, ys) if x == type_gamma])
+                for type_gamma in unique_xs
+            ]
+            ys_max = [
+                np.max([y for x, y in zip(xs, ys) if x == type_gamma])
+                for type_gamma in unique_xs
+            ]
+
+            # relative errors
+            ys_min = [y - y_min for y, y_min in zip(ys_mean, ys_min)]
+            ys_max = [y_max - y for y, y_max in zip(ys_mean, ys_max)]
 
             # skip empty
-            if len(xs) == 0:
+            if len(unique_xs) == 0:
                 continue
 
-            # mark dominated and non-dominated points (maximize both metrics)
-            """
-            dominated = []
-            for i1, (x, y) in enumerate(zip(xs, ys)):
-                dominated.append(False)
-                for j1, (x2, y2) in enumerate(zip(xs, ys)):
-                    if i1 == j1:
-                        continue
-                    if x2 > x and y2 > y:
-                        dominated[-1] = True
-                        break
-            """
+            # plot error bar
+            xticks = [
+                float(all_types_gamma.index(x)) + im * barwidth for x in unique_xs
+            ]
 
-            marker = markers_colors[k % len(markers_colors)][0]
-            color = markers_colors[k % len(markers_colors)][1]
+            for ip in range(len(xticks)):
+                label_metric = logger.metrics_meta[metric]["title"] if ip == 0 else None
 
-            ax.scatter(xs, ys, color=color, marker=marker, label=type_gamma)
+                if logger.metrics_meta[metric]["best_fn"] == np.min:
+                    marker = "v"
+                elif logger.metrics_meta[metric]["best_fn"] == np.max:
+                    marker = "^"
+                else:
+                    marker = "o"
 
-            """
-            # plot dominated points with alpha=0.5
-            ax.scatter(
-                [x for i, x in enumerate(xs) if dominated[i]],
-                [y for i, y in enumerate(ys) if dominated[i]],
-                color=color,
-                marker=marker,
-                s=10,
-            )
+                ax.vlines(
+                    xticks[ip],
+                    0.0,
+                    ys_mean[ip],
+                    color=colors[im % len(linestyles)],
+                    linestyle=linestyle,
+                    linewidth=barwidth * 100,
+                    alpha=0.2,
+                    label=label_metric,
+                )
+                ax.scatter(
+                    xticks[ip],
+                    ys_mean[ip],
+                    color=colors[im % len(linestyles)],
+                    marker=marker,
+                    s=250,
+                    alpha=0.6,
+                )
 
-            # plot non-dominated points with alpha=1
-            ax.scatter(
-                [x for i, x in enumerate(xs) if not dominated[i]],
-                [y for i, y in enumerate(ys) if not dominated[i]],
-                color=color,
-                marker=marker,
-                s=100,
-            )
-            """
+                # add error bar
+                error_alpha = 0.4
+                ax.vlines(
+                    xticks[ip],
+                    ys_mean[ip] - ys_min[ip],
+                    ys_mean[ip] + ys_max[ip],
+                    color=colors[im % len(linestyles)],
+                    linestyle=linestyle,
+                    alpha=error_alpha,
+                )
+                ax.scatter(
+                    xticks[ip],
+                    ys_mean[ip] - ys_min[ip],
+                    color=colors[im % len(linestyles)],
+                    marker="_",
+                    s=100,
+                    alpha=error_alpha,
+                )
+                ax.scatter(
+                    xticks[ip],
+                    ys_mean[ip] + ys_max[ip],
+                    color=colors[im % len(linestyles)],
+                    marker="_",
+                    s=100,
+                    alpha=error_alpha,
+                )
 
-        # based on best_fn, sort the axis (e.g., best is min, then sort descending)
-        best_fn_x = logger.metrics_meta[metrics[0]]["best_fn"]
-        best_fn_y = logger.metrics_meta[metrics[1]]["best_fn"]
+        # axis limits
+        ax.set_xlim(-barwidth, len(unique_xs) - 1 + barwidth * len(metrics))
+        ax.set_ylim(0.0, 1.0)
 
-        if best_fn_x == np.min:
-            ax.invert_xaxis()
-        if best_fn_y == np.min:
-            ax.invert_yaxis()
+        # axis ticks
+        # mark adaptive with bold
+        ada_label = r"\textbf{Adaptive}" if params["text.usetex"] else "Adaptive"
+        xtickslabels = [
+            ada_label if x == "Adaptive" else x for x in unique_xs
+        ]
+        ax.set_xticks(
+            [
+                float(all_types_gamma.index(x)) + (len(metrics) - 1) * barwidth / 2
+                for x in unique_xs
+            ],
+            xtickslabels,
+        )
+
+        # axis labels
+        # ax.set_ylabel("Rate (\%)")
 
     # legend
     handles, labels = ax.get_legend_handles_labels()
+    # add two triangle markers (facing up and down) for "higher is better" and "lower is better"
+    marker_size, color, facecolor = 20, "k", "w"
+    handles += [
+        Line2D(
+            [],
+            [],
+            marker="v",
+            color=color,
+            markerfacecolor=facecolor,
+            markersize=marker_size,
+            linestyle="None",
+            label="Lower is better",
+        ),
+        Line2D(
+            [],
+            [],
+            marker="^",
+            color=color,
+            markerfacecolor=facecolor,
+            markersize=marker_size,
+            linestyle="None",
+            label="Higher is better",
+        ),
+    ]
+    # add delimiter of errors to legend to denote min/max
+    marker_size = 10
+    handles += [
+        Line2D(
+            [],
+            [],
+            color="k",
+            linestyle="-",
+            marker=2,
+            markersize=marker_size,
+            label="Min",
+        ),
+        Line2D(
+            [],
+            [],
+            color="k",
+            linestyle="-",
+            marker=3,
+            markersize=marker_size,
+            label="Max",
+        ),
+    ]
+
     plt.gcf().legend(
         handles=handles,
         ncols=len(handles),
         loc="lower center",
     )
 
+    # use env as title
+    plt.gcf().suptitle(logger.env_name)
 
-def plot_bars(
+
+def plot_bars_2(
     all_stats: Dict[str, List[float]],
     logger: MetricLogger,
     x_key: str,
     gby: str,
     axes: List[plt.Axes],
     linestyle="-",
-    margin_percent=0.05,
 ):
+    """
+    Like plot_bars, but group by metric instead of grouping by type.
+
+    :param all_stats:
+    :param logger:
+    :param x_key:
+    :param gby:
+    :param axes:
+    :param linestyle:
+    :return:
+    """
+
     metrics = logger.metrics
     barwidth = 0.9 / len(metrics)
     all_types_gamma = ["S-CBF", "OD-CBF", "Adaptive", "Other"]
