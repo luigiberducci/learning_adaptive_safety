@@ -597,6 +597,7 @@ def plot_bars(
             markersize=marker_size,
             linestyle="None",
             label=k
+            #label=r"\textbf{Adaptive}" if k == "Adaptive" else k
         )
         for k, marker in markers.items()
     ]
@@ -801,8 +802,8 @@ class F110MetricLogger(MetricLogger):
 
     params_meta = {
         "vgain": {
-            "label": "$v_{opp}$",
-            "val_fn": lambda x: f"{x:.2f}",
+            "label": "$v_{opp}/v_{ego}$",
+            "val_fn": lambda x: f"{x/0.9:.2f}", # normalize relative to ego vgain=0.9
             "train_distr": ("normal", 0.60, 0.05),
             "bar_width": 0.03,
             "ticks": [0.5, 0.6, 0.7, 0.8],
