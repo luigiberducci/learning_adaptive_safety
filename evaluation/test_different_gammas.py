@@ -369,7 +369,7 @@ if __name__ == "__main__":
         "--plot",
         type=str,
         choices=["default", "bar"],
-        default="default",
+        default="bar",
         help="the plot to show",
     )
     parser.add_argument("--grid-params", type=str, nargs="+", default=[])
