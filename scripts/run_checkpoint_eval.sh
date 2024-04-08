@@ -5,7 +5,7 @@ args=(
   # n-eps env-id min-gamma max-gamma gamma-n cbf-type use-decay seed grid-params
   #
   # particle-env-v0
-  "10 particle-env-v1 checkpoints/PPOPID-{particle-env-v1}/checkpoints/model_final.pt 42 human n_agents=3,5,7"
+  "3 particle-env-v1 checkpoints/PPOPID-{particle-env-v1}/checkpoints/model_final.pt 42 human n_agents=3,5,7"
   # f110-multi-agent-v0
   "10 f110-multi-agent-v1 checkpoints/PPOPID-{f110-multi-agent-v1}/checkpoints/model_final.pt 42 human vgain=0.5,0.6,0.7"
 )
@@ -42,7 +42,8 @@ exp=${env_id}_static_eval_n${neps}_gammas${ming}-${maxg}-${ng}_cbf${cbf_type}_us
 
 cmd="
 python ${script} --outdir ${logdir} --n-episodes ${neps} --checkpoints ${checkpoint} \
-            --grid-params ${grid_params} --seed ${seed} ${env_id} --render-mode ${render_mode}
+            --grid-params ${grid_params} --seed ${seed} ${env_id} --plot default \
+            --render-mode ${render_mode}
 "
 
 echo $cmd

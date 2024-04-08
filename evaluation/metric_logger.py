@@ -647,6 +647,10 @@ class ParticleEnvMetricLogger(MetricLogger):
             "label": "Nr Agents",
             "val_fn": lambda x: f"{x:.0f}",
         },
+        "n_agents": {
+            "label": "Nr Agents",
+            "val_fn": lambda x: f"{x:.0f}",
+        },
         "gamma": {
             "label": "CBF $\gamma$",
             "val_fn": lambda x: f"{x:.2f}",
