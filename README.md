@@ -56,6 +56,7 @@ The results will be saved in the `logs/baselines` folder.
 ![exp2](docs/exp2.png)
 
 We provide a couple of ablate models to augment built-in controllers with adaptive safety in the `checkpoints` folder.
+
 To play with trained models with adaptive safety, run:
 ```bash
 ./scripts/run_checkpoint_eval.sh [0-1]
