@@ -9,7 +9,7 @@ cuda: true
 ent_coef: 0.0
 env_id: f110-multi-agent-v0
 evaluation_freq: 10
-exp_name: run_ns1024000_climit_20231003
+exp_name: run_ns1024000_climit_20240301
 gae_lambda: 0.95
 gamma: 0.99
 lagrange_mult: 1.0
@@ -31,7 +31,7 @@ pid_lagrangian_gains:
 - 0.1
 - 0.1
 rpo_alpha: 0.1
-seed: 919316
+seed: 958800
 target_kl: null
 torch_deterministic: true
 total_timesteps: 1024000
