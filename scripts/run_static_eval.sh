@@ -8,8 +8,8 @@ args=(
   "100 particle-env-v0 0.0 1.0 10 False 42 n_agents=3,5,7"
   "100 particle-env-v0 0.0 1.0 10 True 42 n_agents=3,5,7"
   # f110-multi-agent-v0
-  "100 f110-multi-agent-v0 0.0 1.0 10 False 42 vgain=0.5,0.7,0.8"
-  "100 f110-multi-agent-v0 0.0 1.0 10 True 42 vgain=0.5,0.7,0.8"
+  "100 f110-multi-agent-v0 0.0 1.0 10 False 42 vgain=0.5,0.6,0.7"
+  "100 f110-multi-agent-v0 0.0 1.0 10 True 42 vgain=0.5,0.6,0.7"
 )
 
 logdir=logs/static_eval
