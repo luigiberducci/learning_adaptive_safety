@@ -5,7 +5,7 @@ args=(
   # n-eps env-id min-gamma max-gamma gamma-n cbf-type use-decay seed grid-params
   #
   # particle-env-v0
-  "3 particle-env-v1 checkpoints/PPOPID-{particle-env-v1}/checkpoints/model_final.pt 42 human n_agents=3,5,7"
+  "10 particle-env-v1 checkpoints/PPOPID-{particle-env-v1}/checkpoints/model_final.pt 42 human n_agents=3,5,7"
   # f110-multi-agent-v0
   "10 f110-multi-agent-v1 checkpoints/PPOPID-{f110-multi-agent-v1}/checkpoints/model_final.pt 42 human vgain=0.5,0.6,0.7"
 )
