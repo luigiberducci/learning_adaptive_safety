@@ -11,7 +11,7 @@ import pygame
 import yaml
 from PIL import Image, ImageColor
 
-from gym_envs.multi_agent_env.common.track import Track
+from gym_envs.multi_agent_env.common.track import Track, load_map_image
 from gym_envs.multi_agent_env.rendering.objects import (
     Map,
     Car,
@@ -89,10 +89,8 @@ class PygameEnvRenderer(EnvRenderer):
         )
 
         # load map image
-        original_img = map_filepath.parent / self.map_metadata["image"]
-        original_img = np.array(
-            Image.open(original_img).transpose(Image.FLIP_TOP_BOTTOM)
-        ).astype(np.float64)
+        map_image_path = map_filepath.parent / self.map_metadata["image"]
+        original_img = load_map_image(map_image_path).astype(np.float64)
         
         map_zoom_level = 0.4
         car_zoom_level = render_spec.zoom_in_factor

@@ -250,11 +250,8 @@ class Track:
                 track_spec = TrackSpec(name=track, **map_metadata)
 
             # load occupancy grid
-            map_filename = pathlib.Path(track_spec.image)
-            image = Image.open(track_dir / str(map_filename)).transpose(
-                Transpose.FLIP_TOP_BOTTOM
-            )
-            occupancy_map = np.array(image).astype(np.float32)
+            map_filepath = track_dir / track_spec.image
+            occupancy_map = load_map_image(map_filepath).astype(np.float32)
             occupancy_map[occupancy_map <= 128] = 0.0
             occupancy_map[occupancy_map > 128] = 255.0
 
@@ -271,8 +268,8 @@ class Track:
 
             return Track(
                 spec=track_spec,
-                filepath=str((track_dir / map_filename.stem).absolute()),
-                ext=map_filename.suffix,
+                filepath=str((track_dir / map_filepath.stem).absolute()),
+                ext=map_filepath.suffix,
                 occupancy_map=occupancy_map,
                 centerline=centerline,
                 raceline=raceline,
@@ -283,6 +280,11 @@ class Track:
             exit(-1)
 
 
+def load_map_image(map_filepath: pathlib.Path) -> np.ndarray:
+    image = (Image.open(map_filepath).transpose(
+        Transpose.FLIP_TOP_BOTTOM
+    ))
+    return np.array(image)
 @njit(cache=True)
 def extract_forward_curvature(
     trajectory_xyk: np.ndarray,
