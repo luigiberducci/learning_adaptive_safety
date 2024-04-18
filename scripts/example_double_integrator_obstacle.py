@@ -17,10 +17,12 @@ debug = False
 
 
 class DoubleIntegratorEnv(gym.Env):
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 5}
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 8}
 
     def __init__(
         self,
+        n_obstacles: int = 1,
+        obst_noise: float = 0.0,
         time_limit=10.0,
         dt=0.2,
         observation_type: str = "state",
@@ -34,11 +36,18 @@ class DoubleIntegratorEnv(gym.Env):
         self.start_state = np.array([-5.0, -5.0, 0.0, 0.0])
         self.start_xy = self.start_state[:2]
 
-        self.goal_state = np.array([0.0, 0.0, 0.0, 0.0])
+        self.goal_state = np.array([5.0, 5.0, 0.0, 0.0])
         self.goal_xy = self.goal_state[:2]
 
-        self.obst_xy = np.array([-2.0, -2.25])
+        self.obst_xy_0 = np.array([
+            [-2.0, -2.25],
+            [-4.0, 1.0],
+            [1.0, 0.0],
+            [0.5, 3.1],
+        ])
+        self.obst_xy_0 = self.obst_xy_0[:n_obstacles]
         self.obst_r = 1.5  # radius of the obstacle
+        self.obst_noise = obst_noise
 
         self.success_threshold = 1.0  # distance to goal to consider episode successful
 
@@ -73,10 +82,13 @@ class DoubleIntegratorEnv(gym.Env):
         else:
             raise ValueError(f"Unknown reward type {reward_type}")
 
+        # cost
+        self.cost = partial(self.compute_costs, obst_r=self.obst_r)
+
         # action space
         self.action_dim = 2
         self.action_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(self.action_dim,), dtype=np.float32
+            low=-50.0, high=50.0, shape=(self.action_dim,), dtype=np.float32
         )
 
         # observation space
@@ -109,18 +121,16 @@ class DoubleIntegratorEnv(gym.Env):
         self.state = np.zeros(4, dtype=np.float32)
         self.state[:2] = self.start_xy
 
+        self.obst_xy = self.obst_xy_0
+
         self.time = 0.0
         self.total_reward = 0.0
         self.total_cost = 0.0
 
         observation = self.observe()
 
-        cost = int(
-            (self.state[0] - self.obst_xy[0]) ** 2
-            + (self.state[1] - self.obst_xy[1]) ** 2
-            - self.obst_r**2
-            < 0
-        )
+        cost = self.cost(self.state, self.obst_xy)
+
         done = self.time >= self.time_limit
         success = (
             done
@@ -145,17 +155,13 @@ class DoubleIntegratorEnv(gym.Env):
         :return: new state, reward, done, info
         """
         nstate = self.A @ self.state + self.B @ action
+        self.obst_xy = self.obst_xy_0 + self.dt * self.obst_noise * (-1.0 + 2*np.random.random(self.obst_xy.shape))
         nstate = np.clip(nstate, -5.0, 5.0)  # clip state to be within the bounds
 
         self.time += self.dt
 
         reward = self.reward(self.state, action, nstate)
-        cost = int(
-            (nstate[0] - self.obst_xy[0]) ** 2
-            + (nstate[1] - self.obst_xy[1]) ** 2
-            - self.obst_r**2
-            < 0
-        )
+        cost = self.cost(self.state, self.obst_xy)
 
         done = self.time >= self.time_limit
         truncated = False
@@ -196,6 +202,18 @@ class DoubleIntegratorEnv(gym.Env):
             raise ValueError(f"Unknown observation type {self.observation_type}")
         return observation
 
+    def compute_costs(self, state, obst_xys, obst_r):
+        cost = 0.0
+        for obst_xy in obst_xys:
+            cost += int(
+                (state[0] - obst_xy[0]) ** 2
+                + (state[1] - obst_xy[1]) ** 2
+                - obst_r ** 2
+                < 0
+            )
+        return cost
+
+
     def render(self):
         if self.window is None and self.render_mode == "human":
             pygame.init()
@@ -219,14 +237,15 @@ class DoubleIntegratorEnv(gym.Env):
             pix_square_size * self.success_threshold,
         )
 
-        # we draw the obstacle
-        obst_xy = self.obst_xy + self.size / 2
-        pygame.draw.circle(
-            canvas,
-            (255, 125, 0),
-            (obst_xy) * pix_square_size,
-            pix_square_size * self.obst_r,
-        )
+        # we draw the obstacles
+        for obst_xy in self.obst_xy:
+            obst_xy = obst_xy + self.size / 2
+            pygame.draw.circle(
+                canvas,
+                (255, 125, 0),
+                (obst_xy) * pix_square_size,
+                pix_square_size * self.obst_r,
+            )
 
         # Now we draw the agent
         agent_xy = self.state[:2] + self.size / 2
@@ -360,85 +379,74 @@ def double_integrator_advanced_cbf_project(
     opti.subject_to(u <= u_max)
 
     # slacks
-    slack = opti.variable()
-    opti.subject_to(slack >= 0)
+    slacks = opti.variable(env.obst_xy.shape[0])
+    opti.subject_to(slacks >= 0)
 
     # state relation
     x, y, vx, vy = state
-    dt = env.dt
-    a_max = 1.0  # maximum braking in any direction is >= 1.0
+    dt = 0.1 #env.dt
+    a_max = env.action_space.high[0]  # maximum braking in any direction is >= 1.0
 
     new_x = x + vx * dt + 0.5 * u[0] * dt**2
     new_y = y + vy * dt + 0.5 * u[1] * dt**2
     new_vx = vx + u[0] * dt
     new_vy = vy + u[1] * dt
 
-    # compute hx
-    rel_pos = np.array([x - env.obst_xy[0], y - env.obst_xy[1]])
-    norm_pos = np.linalg.norm(rel_pos)
-    Dp = rel_pos / norm_pos
+    # compute cbf constraint for each obstacle
+    hxs = []
+    for i, obst_xy in enumerate(env.obst_xy):
+        rel_pos = np.array([x - obst_xy[0], y - obst_xy[1]])
+        norm_pos = np.linalg.norm(rel_pos)
+        Dp = rel_pos / norm_pos
 
-    rel_vel = np.array([vx, vy])
-    Dv = np.dot(rel_vel, Dp)
+        rel_vel = np.array([vx, vy])
+        Dv = np.dot(rel_vel, Dp)
 
-    # compute hx_next
-    rel_pos_next = casadi.vertcat(new_x - env.obst_xy[0], new_y - env.obst_xy[1])
-    norm_pos_next = casadi.norm_2(rel_pos_next)
-    Dp_next = rel_pos_next / norm_pos_next
+        # compute hx_next
+        rel_pos_next = casadi.vertcat(new_x - obst_xy[0], new_y - obst_xy[1])
+        norm_pos_next = casadi.norm_2(rel_pos_next)
+        Dp_next = rel_pos_next / norm_pos_next
 
-    rel_vel_next = casadi.vertcat(new_vx, new_vy)
-    Dv_next = casadi.dot(rel_vel_next, Dp_next)
+        rel_vel_next = casadi.vertcat(new_vx, new_vy)
+        Dv_next = casadi.dot(rel_vel_next, Dp_next)
 
-    if Dv > 1e-3:
-        # if the agent is moving away from the obstacle
-        hx = norm_pos - env.obst_r
-        hx_next = norm_pos_next - env.obst_r
-    else:
-        # if the agent is moving towards the obstacle
-        hx = norm_pos - Dv**2 / (2 * a_max) - env.obst_r
-        hx_next = norm_pos_next - Dv_next**2 / (2 * a_max) - env.obst_r
+        obst_r = env.obst_r + env.obst_noise
+        if Dv > 1e-3:
+            # if the agent is moving away from the obstacle
+            hx = norm_pos - obst_r
+            hx_next = norm_pos_next - obst_r
+        else:
+            # if the agent is moving towards the obstacle
+            hx = norm_pos - Dv**2 / (2 * a_max) - obst_r
+            hx_next = norm_pos_next - Dv_next**2 / (2 * a_max) - obst_r
 
-    # add cbf constraint
-    opti.subject_to(hx_next - hx + slack >= -gamma * hx)
+        # add cbf constraint
+        opti.subject_to(hx_next - hx + slacks[i] >= -gamma * hx)
+
+        # debug
+        hxs.append(hx)
 
     # objective
-    obj = (u[0] - action[0]) ** 2 + (u[1] - action[1]) ** 2 + 1000 * slack
+    obj = (u[0] - action[0]) ** 2 + (u[1] - action[1]) ** 2 + 100000000 * casadi.sumsqr(slacks)
     opti.minimize(obj)
 
     p_opts = {"print_time": False, "verbose": False}
     s_opts = {"print_level": 0}
     opti.solver("ipopt", p_opts, s_opts)  # "qpoases", p_opts, s_opts)
 
-    try:
-        sol = opti.solve()
-        safe_input = sol.value(u)
+    sol = opti.solve()
+    safe_input = sol.value(u)
 
-        dict_infos = {
-            "hx": hx,
-            "hx_next": sol.value(hx_next),
-            "cbf_lhs": sol.value(hx_next - hx + slack),
-            "cbf_rhs": -gamma * hx,
-            "slack": sol.value(slack),
-            "gammas": sol.value(gamma),
-            "safe_gammas": sol.value(gamma),
-            "obj": sol.value(obj),
-            "opt_status": 1.0,
-        }
-
-    except Exception:
-        safe_input = u
-
-        dict_infos = {
-            "hx": 0.0,
-            "hx_next": 0.0,
-            "cbf_lhs": 0.0,
-            "cbf_rhs": 0.0,
-            "slack": 0.0,
-            "gammas": 0.0,
-            "safe_gammas": 0.0,
-            "obj": 0.0,
-            "opt_status": -1.0,
-        }
+    dict_infos = {
+        "hxs": hxs,
+        #"hx_next": sol.value(hx_next),
+        #"cbf_lhs": sol.value(hx_next - hx + slack),
+        #"cbf_rhs": -gamma * hx,
+        "slack": sol.value(slacks),
+        "gammas": sol.value(gamma),
+        "obj": sol.value(obj),
+        "opt_status": 1.0,
+    }
 
     return safe_input, dict_infos
 
@@ -447,29 +455,39 @@ def main():
     Create video animation of the trajectory of x, y
     """
 
+    n_obst = 5
+    obst_noise = 0.0
+    record = False
     env = DoubleIntegratorEnv(
-        render_mode=None,
-        dt=0.1,
-        time_limit=7.5,
+        n_obstacles=n_obst,
+        obst_noise=obst_noise,
+        render_mode="human",
+        dt=0.3,
+        time_limit=10.0,
         observation_type="state_and_time",
         reward_type="norm_progress",
     )
 
 
     trajectories = {}
+    obst_trajectories = {}
+    actions = {}
 
-    for gamma in [0.1, 0.25, 0.5, 1.0]:
+    for gamma in [0.1, 0.5, 1.0]:
         print("gamma", gamma)
 
         env.reset()
         done = False
 
         xs, ys = [], []
+        oxs, oys = [], []
+        acts = []
+        hxs = []
 
         while not done:
             x, y, vx, vy = env.state
-            action = 2.5 * (env.goal_xy - env.state[:2])
-            action, _ = double_integrator_advanced_cbf_project(env, env.state, action, gamma=gamma)
+            action = 50 * np.ones(2)
+            action, action_info = double_integrator_advanced_cbf_project(env, env.state, action, gamma=gamma)
 
             obs, reward, done, truncated, info = env.step(action)
             frame = env.render()
@@ -477,19 +495,50 @@ def main():
             # debug
             xs.append(x)
             ys.append(y)
+            oxs.append(env.obst_xy[:, 0])
+            oys.append(env.obst_xy[:, 1])
+            hxs.append(action_info["hxs"])
+            acts.append(action)
 
         trajectories[gamma] = (xs, ys)
+        obst_trajectories[gamma] = (oxs, oys)
+        actions[gamma] = acts
+
+    # debug plot
+    fig, axes = plt.subplots(nrows=len(trajectories), ncols=2)
+    for i, gamma in enumerate(trajectories):
+        traj = trajectories[gamma]
+        acts = actions[gamma]
+
+        acts = np.array(acts)
+        traj = np.array(traj).T
+
+        axes[i, 0].plot(traj[:, 0], traj[:, 1], "b", label=gamma)
+        axes[i, 0].set_title(gamma)
+        axes[i, 0].set_xlim(-5.0, 5.0)
+        axes[i, 0].set_ylim(-5.0, 5.0)
+
+        axes[i, 1].plot(acts[:, 0], "r", label="act 0")
+        axes[i, 1].plot(acts[:, 1], "g", label="act 1")
+        axes[i, 1].set_title(gamma)
+        axes[i, 1].set_ylim([env.action_space.low[0], env.action_space.high[0]])
+
+    plt.show()
 
     # Create a video of the trajectory
+    if not record:
+        exit(0)
+
     fig, ax = plt.subplots()
-    ax.set_xlim(-6, 0)
-    ax.set_ylim(-6, 0)
+    ax.set_xlim(-6, 6)
+    ax.set_ylim(-6, 6)
     ax.set_aspect('equal')
 
-    # Create a circle for the obstacle
-    ox, oy = env.obst_xy
-    circle = plt.Circle((ox, oy), env.obst_r, color='r', alpha=0.5)
-    ax.add_artist(circle)
+    # Create a circle for the obstacles
+    circles = []
+    for ox, oy in env.obst_xy:
+        circle = plt.Circle((ox, oy), env.obst_r, color='r', alpha=0.5)
+        circles.append(circle)
 
     # Create a line for the trajectory
     lines = []
@@ -503,15 +552,21 @@ def main():
     def init():
         for i in range(len(lines)):
             lines[i].set_data([], [])
-        return lines
+        for i in range(len(circles)):
+            circles[i].center = (env.obst_xy[i, 0], env.obst_xy[i, 1])
+            ax.add_patch(circles[i])
+        return lines + circles
 
     def animate(i):
         for j, (gamma, (xs, ys)) in enumerate(trajectories.items()):
             lines[j].set_data(xs[:i], ys[:i])
-        return lines
+        for j, (gamma, (oxs, oys)) in enumerate(obst_trajectories.items()):
+            for k in range(len(oxs[0])):
+                circles[k].center = (oxs[i][k], oys[i][k])
+        return lines + circles
 
     anim = FuncAnimation(fig, animate, init_func=init, frames=len(xs), interval=200, blit=True)
-    anim.save(f'trajectory_all.mp4', writer='ffmpeg', dpi=300)
+    anim.save(f'trajectory_all_NO{n_obst}_ON{obst_noise}.mp4', writer='ffmpeg', dpi=300)
 
 if __name__== "__main__":
     main()
